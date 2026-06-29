@@ -12,9 +12,9 @@ spring:
             - id: product-service
               uri: lb://PRODUCT-SERVICE    # lb = load balanced via Eureka
               predicates:
-                - Path=/api/products/**
+                - Path=/api/products, /api/products/**
               filters:
-                - StripPrefix=0           # do not strip /api/products prefix
+                - RewritePath=/api/products(?<segment>.*), /api/v1/products$\{segment}
                 - AddResponseHeader=X-Platform, microservices-pro
 
 eureka:
