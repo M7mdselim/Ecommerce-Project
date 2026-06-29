@@ -1,0 +1,29 @@
+server:
+  port: 8080
+
+spring:
+  application:
+    name: api-gateway
+  cloud:
+    gateway:
+      server:
+        webflux:
+          routes:
+            - id: product-service
+              uri: lb://PRODUCT-SERVICE    # lb = load balanced via Eureka
+              predicates:
+                - Path=/api/products/**
+              filters:
+                - StripPrefix=0           # do not strip /api/products prefix
+                - AddResponseHeader=X-Platform, microservices-pro
+
+eureka:
+  client:
+    service-url:
+      defaultZone: http://localhost:8761/eureka/
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,gateway

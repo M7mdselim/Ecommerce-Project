@@ -1,0 +1,15 @@
+server:
+  port: 8761 
+
+spring:
+  application:
+    name: Eureka-server
+  config:
+    import: "optional:configserver:http://localhost:8888"
+
+eureka: 
+  client: 
+    register-with-eureka: false # this IS the registry 
+    fetch-registry: false 
+  server: 
+    enable-self-preservation: false # DEV ONLY

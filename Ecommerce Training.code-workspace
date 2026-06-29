@@ -1,0 +1,17 @@
+{
+	"folders": [
+		{
+			"path": "config-server"
+		},
+		{
+			"path": "eureka"
+		},
+		{
+			"path": "product"
+		},
+		{
+			"path": "api-gateway"
+		}
+	],
+	"settings": {}
+}
