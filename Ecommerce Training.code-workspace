@@ -11,6 +11,12 @@
 		},
 		{
 			"path": "api-gateway"
+		},
+		{
+			"path": "payment-service"
+		},
+		{
+			"path": "order-service"
 		}
 	],
 	"settings": {}
