@@ -33,3 +33,7 @@ management:
     web:
       exposure:
         include: health,info
+
+payment:
+  failure-rate: 0.5
+  delay-ms: 0

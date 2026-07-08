@@ -27,9 +27,12 @@ eureka:
       defaultZone: http://localhost:8761/eureka/
   instance:
     prefer-ip-address: true
+<<<<<<< Updated upstream
 
 management:
   endpoints:
     web:
       exposure:
         include: health,info
+=======
+>>>>>>> Stashed changes

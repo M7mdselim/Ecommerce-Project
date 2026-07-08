@@ -9,7 +9,7 @@ spring:
     config:
       server:
         git:
-          uri: https://github.com/M7mdselim/Ecommerce-Config-Training
+          uri: file:../config-repo
 
 eureka:
   client:
