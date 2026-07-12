@@ -43,6 +43,11 @@ public class OrderServiceIntegrationTest {
     @BeforeEach
     void setUp() {
         WireMock.reset();
+        // Stub successful inventory check by default
+        stubFor(get(urlPathEqualTo("/api/v1/inventory/check"))
+                .willReturn(aResponse()
+                        .withHeader("Content-Type", "application/json")
+                        .withBody("{\"productId\":\"prod123\",\"requestedQuantity\":2,\"available\":true,\"remainingStock\":8}")));
     }
 
     @Test

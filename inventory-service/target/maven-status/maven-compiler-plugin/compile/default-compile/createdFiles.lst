@@ -1,0 +1,7 @@
+com\microservice\pro\inventory_service\controller\InventoryController.class
+com\microservice\pro\inventory_service\service\InventoryService.class
+com\microservice\pro\inventory_service\exception\ProductNotFoundException.class
+com\microservice\pro\inventory_service\exception\InsufficientStockException.class
+com\microservice\pro\inventory_service\InventoryServiceApplication.class
+com\microservice\pro\inventory_service\entity\StockItem.class
+com\microservice\pro\inventory_service\dto\StockCheckResponse.class

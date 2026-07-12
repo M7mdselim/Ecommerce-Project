@@ -27,7 +27,6 @@ eureka:
       defaultZone: http://localhost:8761/eureka/
   instance:
     prefer-ip-address: true
-<<<<<<< Updated upstream
 
 resilience4j:
   circuitbreaker:
@@ -53,6 +52,16 @@ resilience4j:
           - java.lang.RuntimeException
         ignore-exceptions:
           - java.lang.IllegalArgumentException
+  bulkhead:
+    instances:
+      paymentService:
+        max-concurrent-calls: 10
+        max-wait-duration: 0ms
+  timelimiter:
+    instances:
+      paymentService:
+        timeout-duration: 3s
+        cancel-running-future: true
 
 management:
   health:
@@ -61,13 +70,7 @@ management:
   endpoints:
     web:
       exposure:
-<<<<<<< HEAD
         include: health,info,circuitbreakers
   endpoint:
     health:
       show-details: always
-=======
-        include: health,info
-=======
->>>>>>> Stashed changes
->>>>>>> Task-5

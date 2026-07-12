@@ -17,6 +17,9 @@ spring:
 payment-service:
   url: http://localhost:${wiremock.server.port}
 
+inventory-service:
+  url: http://localhost:${wiremock.server.port}
+
 resilience4j:
   bulkhead:
     instances:
