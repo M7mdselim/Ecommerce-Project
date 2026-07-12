@@ -1,37 +1,34 @@
-server:
-  port: 8082
-
 spring:
   application:
-    name: order-service
-  config:
-    import: "optional:configserver:http://localhost:8888"
+    name: order-service-test
   datasource:
-    url: jdbc:h2:mem:orderdb
+    url: jdbc:h2:mem:orderdb_test
     driver-class-name: org.h2.Driver
     username: sa
     password: password
   h2:
     console:
-      enabled: true
-      path: /h2-console
+      enabled: false
   jpa:
     database-platform: org.hibernate.dialect.H2Dialect
     hibernate:
       ddl-auto: update
-    show-sql: true
 
-eureka:
-  client:
-    service-url:
-      defaultZone: http://localhost:8761/eureka/
-  instance:
-    prefer-ip-address: true
-<<<<<<< Updated upstream
+payment-service:
+  url: http://localhost:${wiremock.server.port}
 
 resilience4j:
+  bulkhead:
+    instances:
+      paymentService:
+        max-concurrent-calls: 10
+        max-wait-duration: 0ms
+  timelimiter:
+    instances:
+      paymentService:
+        timeout-duration: 2s
+        cancel-running-future: true
   circuitbreaker:
-    circuit-breaker-aspect-order: 1
     instances:
       paymentService:
         sliding-window-type: COUNT_BASED
@@ -42,7 +39,6 @@ resilience4j:
         automatic-transition-from-open-to-half-open-enabled: true
         register-health-indicator: true
   retry:
-    retry-aspect-order: 2
     instances:
       paymentService:
         max-attempts: 3
@@ -53,21 +49,3 @@ resilience4j:
           - java.lang.RuntimeException
         ignore-exceptions:
           - java.lang.IllegalArgumentException
-
-management:
-  health:
-    circuitbreakers:
-      enabled: true
-  endpoints:
-    web:
-      exposure:
-<<<<<<< HEAD
-        include: health,info,circuitbreakers
-  endpoint:
-    health:
-      show-details: always
-=======
-        include: health,info
-=======
->>>>>>> Stashed changes
->>>>>>> Task-5
