@@ -4,6 +4,7 @@ import com.microservice.pro.order_service.dto.*;
 import com.microservice.pro.order_service.service.InventoryClient;
 import com.microservice.pro.order_service.service.OrderService;
 import com.microservice.pro.order_service.service.PaymentClient;
+import com.microservice.pro.order_service.messaging.OrderEventPublisher;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
@@ -25,13 +26,15 @@ public class OrderServiceTest {
 
     private PaymentClient paymentClient;
     private InventoryClient inventoryClient;
+    private OrderEventPublisher orderEventPublisher;
     private OrderService orderService;
 
     @BeforeEach
     void setUp() {
         paymentClient = mock(PaymentClient.class);
         inventoryClient = mock(InventoryClient.class);
-        orderService = new OrderService(paymentClient, inventoryClient);
+        orderEventPublisher = mock(OrderEventPublisher.class);
+        orderService = new OrderService(paymentClient, inventoryClient, orderEventPublisher);
     }
 
     @Test

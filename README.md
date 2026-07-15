@@ -178,4 +178,119 @@ Run tests using the Maven Wrapper from the root of any service directory:
 
 # In inventory-service
 .\mvnw.cmd clean test
+
+# In notification-service
+.\mvnw.cmd clean test
 ```
+
+---
+
+## 📡 Session 7: Asynchronous Communication via Apache Kafka
+
+This section introduces event-driven, asynchronous messaging using Apache Kafka in KRaft mode to decouple the Order Service and the new Notification Service.
+
+### 🏗️ Extended Architecture Overview
+
+```mermaid
+graph TD
+    Client[Client Request] -->|REST / API| Gateway[API Gateway :8080]
+    
+    %% Config & Discovery
+    Config[Config Server :8888] -.->|Provides Config| Gateway
+    Config -.->|Provides Config| Product[Product Service :8081]
+    Config -.->|Provides Config| Order[Order Service :8082]
+    Config -.->|Provides Config| Payment[Payment Service :8083]
+    Config -.->|Provides Config| Inventory[Inventory Service :8084]
+    Config -.->|Provides Config| Notification[Notification Service :8085]
+    
+    Eureka[Eureka Server :8761] <--->|Service Registration & Discovery| Gateway
+    Eureka <--->|Register| Product
+    Eureka <--->|Register| Order
+    Eureka <--->|Register| Payment
+    Eureka <--->|Register| Inventory
+    Eureka <--->|Register| Notification
+
+    %% Downstream Traffic Routing
+    Gateway -->|Routes| Product
+    Gateway -->|Routes| Order
+    
+    %% Service-to-Service Flow (Sync)
+    Order -->|Feign Client with JWT propagation| Inventory
+    Order -->|Async Feign Call| Payment
+    
+    %% Event-Driven Flow (Async)
+    Order -.->|Publish OrderCreatedEvent | Kafka["Apache Kafka :9092 (order-created Topic)"]
+    Kafka -.->|Consume Event| Notification
+```
+
+### 🔌 Updated Service Port Registry
+
+| Service Name | Port | Database / Backend | Key Functions |
+| :--- | :---: | :--- | :--- |
+| **`notification-service`**| `8085`| In-Memory Console | Consumes Kafka events, simulates sending emails |
+| **`kafka`** (Broker) | `9092`| KRaft Combined Directory | Event bus broker for asynchronous messaging |
+| **`redis`** (Cache) | `6379`| RAM | In-memory key-value store for rate limiting |
+
+---
+
+### 🔄 Execution Flow (Sync vs Async)
+
+1. **Client -> API Gateway -> Order Service**: Client sends order request with JWT.
+2. **Order Service -> Inventory Service (Sync via OpenFeign)**: Validates stock availability. This remains synchronous because inventory reservation is a hard dependency for order logic.
+3. **Order Service -> Payment Service (Sync/Async via OpenFeign & Resilience4j)**: Charges the credit card.
+4. **Order Service -> Save Order**: Persists the order locally.
+5. **Order Service -> Publish `OrderCreatedEvent` (Async via Kafka)**:
+   - Order Service sends `OrderCreatedEvent` to Kafka topic `order-created` with the `orderId` as the key.
+   - The publisher uses `try-catch` error wrapping, ensuring that Kafka issues **never** block or fail the order confirmation response to the client.
+6. **Notification Service -> Kafka (Async Event Consumption)**:
+   - Notification Service listens to `order-created` topic and processes the event.
+   - It simulates sending an email by outputting structured logs containing `orderId`, `customerId`, and `totalAmount`.
+
+---
+
+### 🐳 Docker Setup
+
+To spin up the external infrastructure dependencies (Redis & Kafka in KRaft mode), run:
+```bash
+docker compose up -d
+```
+No ZooKeeper is used, as Kafka is configured in KRaft (Kafka Raft Metadata) mode, exposing ports `9092` (host access) and `29092` (internal Docker network).
+
+---
+
+### 📝 Expected Logs
+
+When an order is successfully created:
+
+#### Order Service Logs:
+```text
+[ORDER DATABASE] Order ID: 41b2c45d-7a6f-4099-b1d3-64a66a1a7b3c has been successfully saved to DB
+Publishing OrderCreatedEvent to topic 'order-created': OrderCreatedEvent[orderId=41b2c45d-7a6f-4099-b1d3-64a66a1a7b3c, customerId=user_12345, totalAmount=250.00]
+Published OrderCreatedEvent. Order ID: 41b2c45d-7a6f-4099-b1d3-64a66a1a7b3c, Customer ID: user_12345, Total Amount: 250.00
+```
+
+#### Notification Service Logs:
+```text
+Received OrderCreatedEvent - Order ID: 41b2c45d-7a6f-4099-b1d3-64a66a1a7b3c, Customer ID: user_12345, Total Amount: 250.00
+Sending confirmation email... [Order: 41b2c45d-7a6f-4099-b1d3-64a66a1a7b3c, Customer: user_12345, Amount: 250.00]
+Email successfully sent to customer user_12345 for order 41b2c45d-7a6f-4099-b1d3-64a66a1a7b3c
+```
+
+---
+
+### 🧠 Engineering Decisions
+
+#### 1. Why Notification uses Kafka
+Sending notification emails involves I/O operations and communication with external providers, which introduces latency and potential failure points. Decoupling this through a Kafka event bus guarantees:
+- **Resilience**: The Order Service is unaffected if the email server or Notification Service goes down.
+- **Performance**: The Order Service immediately replies to the customer without waiting for email sending.
+- **Scalability**: Multiple services can consume `OrderCreatedEvent` in the future (e.g., Analytics, Shipping) without modifying the Order Service.
+
+#### 2. Why Inventory still uses OpenFeign
+Stock verification is critical for deciding whether an order should be placed or rejected. We cannot asynchronously confirm an order if we don't know whether the items are actually available. Therefore, synchronous, blocking communication via OpenFeign remains the appropriate pattern for checking inventory.
+
+#### 3. Why this is NOT a Saga
+This integration is simple asynchronous fire-and-forget message publishing. It is **not** a Saga because:
+- There are no compensatory actions (e.g., refunding payment if notifications fail).
+- The Notification Service failure has no impact on the overall transaction outcome (order remains confirmed).
+- There is no orchestrator or state machine tracking the completion of subsequent steps.

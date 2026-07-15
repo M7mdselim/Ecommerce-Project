@@ -8,6 +8,8 @@ import com.microservice.pro.order_service.dto.StockCheckResponse;
 import com.microservice.pro.order_service.exception.InsufficientStockException;
 import com.microservice.pro.order_service.exception.InventoryUnavailableException;
 import com.microservice.pro.order_service.exception.ProductNotFoundException;
+import com.microservice.pro.order_service.event.OrderCreatedEvent;
+import com.microservice.pro.order_service.messaging.OrderEventPublisher;
 import io.github.resilience4j.bulkhead.annotation.Bulkhead;
 import io.github.resilience4j.circuitbreaker.annotation.CircuitBreaker;
 import io.github.resilience4j.retry.annotation.Retry;
@@ -17,6 +19,7 @@ import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 import org.springframework.web.context.request.RequestAttributes;
 import org.springframework.web.context.request.RequestContextHolder;
+import org.springframework.web.context.request.ServletRequestAttributes;
 
 import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
@@ -34,11 +37,13 @@ public class OrderService {
     private static final Logger logger = LoggerFactory.getLogger(OrderService.class);
     private final PaymentClient paymentClient;
     private final InventoryClient inventoryClient;
+    private final OrderEventPublisher orderEventPublisher;
 
-    // Constructor injection for both Feign Clients
-    public OrderService(PaymentClient paymentClient, InventoryClient inventoryClient) {
+    // Constructor injection for both Feign Clients and the Event Publisher
+    public OrderService(PaymentClient paymentClient, InventoryClient inventoryClient, OrderEventPublisher orderEventPublisher) {
         this.paymentClient = paymentClient;
         this.inventoryClient = inventoryClient;
+        this.orderEventPublisher = orderEventPublisher;
     }
 
     /**
@@ -83,6 +88,26 @@ public class OrderService {
                         paymentResponse.getStatus(), paymentResponse.getTransactionId());
 
                 if ("APPROVED".equalsIgnoreCase(paymentResponse.getStatus())) {
+                    // Extract customer ID (X-User-Id) from the request attributes context
+                    String customerId = "UNKNOWN";
+                    if (requestAttributes instanceof ServletRequestAttributes servletAttrs) {
+                        String xUserId = servletAttrs.getRequest().getHeader("X-User-Id");
+                        if (xUserId != null) {
+                            customerId = xUserId;
+                        }
+                    }
+
+                    // Save Order step (simulated by returning the response, as database integration is mock)
+                    logger.info("[ORDER DATABASE] Order ID: {} has been successfully saved to DB", orderId);
+
+                    // Publish the event: Kafka failure must not block the order flow
+                    try {
+                        OrderCreatedEvent event = new OrderCreatedEvent(orderId, customerId, request.getAmount());
+                        orderEventPublisher.publishOrderCreated(event);
+                    } catch (Exception ex) {
+                        logger.error("Failed to publish OrderCreatedEvent for order: {}. Error: {}", orderId, ex.getMessage(), ex);
+                    }
+
                     return new OrderResponse(
                             orderId,
                             "CONFIRMED",

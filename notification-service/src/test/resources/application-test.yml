@@ -1,0 +1,5 @@
+spring:
+  application:
+    name: notification-service-test
+  kafka:
+    bootstrap-servers: localhost:9092
