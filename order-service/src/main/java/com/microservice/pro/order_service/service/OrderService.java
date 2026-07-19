@@ -8,6 +8,13 @@ import com.microservice.pro.order_service.dto.StockCheckResponse;
 import com.microservice.pro.order_service.exception.InsufficientStockException;
 import com.microservice.pro.order_service.exception.InventoryUnavailableException;
 import com.microservice.pro.order_service.exception.ProductNotFoundException;
+import com.microservice.pro.order_service.event.OrderCreatedEvent;
+import com.microservice.pro.order_service.messaging.OrderEventPublisher;
+import com.microservice.pro.order_service.entity.Order;
+import com.microservice.pro.order_service.entity.OrderStatus;
+import com.microservice.pro.order_service.repository.OrderRepository;
+import com.microservice.pro.order_service.event.OrderPlacedEvent;
+import org.springframework.kafka.core.KafkaTemplate;
 import io.github.resilience4j.bulkhead.annotation.Bulkhead;
 import io.github.resilience4j.circuitbreaker.annotation.CircuitBreaker;
 import io.github.resilience4j.retry.annotation.Retry;
@@ -34,11 +41,19 @@ public class OrderService {
     private static final Logger logger = LoggerFactory.getLogger(OrderService.class);
     private final PaymentClient paymentClient;
     private final InventoryClient inventoryClient;
+    private final OrderEventPublisher orderEventPublisher;
+    private final OrderRepository orderRepository;
+    private final KafkaTemplate<String, Object> kafkaTemplate;
 
-    // Constructor injection for both Feign Clients
-    public OrderService(PaymentClient paymentClient, InventoryClient inventoryClient) {
+    // Constructor injection
+    public OrderService(PaymentClient paymentClient, InventoryClient inventoryClient, 
+                        OrderEventPublisher orderEventPublisher, OrderRepository orderRepository,
+                        KafkaTemplate<String, Object> kafkaTemplate) {
         this.paymentClient = paymentClient;
         this.inventoryClient = inventoryClient;
+        this.orderEventPublisher = orderEventPublisher;
+        this.orderRepository = orderRepository;
+        this.kafkaTemplate = kafkaTemplate;
     }
 
     /**
@@ -146,5 +161,66 @@ public class OrderService {
                 "PENDING",
                 "Payment unavailable."
         ));
+    }
+
+    /**
+     * Creates an order synchronously and publishes an OrderPlacedEvent to start the Saga.
+     */
+    public OrderResponse createOrder(OrderRequest request) {
+        String orderId = UUID.randomUUID().toString();
+        logger.info("SAGA: Initiating order creation. Order ID: {}, Product ID: {}, Quantity: {}, Amount: {}",
+                orderId, request.getProductId(), request.getQuantity(), request.getAmount());
+
+        try {
+            // Step 1: Sync pre-check stock
+            StockCheckResponse stockResponse = inventoryClient.checkStock(request.getProductId(), request.getQuantity());
+            if (stockResponse == null || !stockResponse.available()) {
+                logger.warn("SAGA: Insufficient stock on pre-check. Rejecting order ID: {}", orderId);
+                return new OrderResponse(orderId, "REJECTED", "Insufficient stock");
+            }
+        } catch (Exception ex) {
+            logger.error("SAGA: Stock check failed or inventory service is down: {}", ex.getMessage());
+            return new OrderResponse(orderId, "REJECTED", "Inventory check failed: " + ex.getMessage());
+        }
+
+        // Save order as PENDING
+        Order order = new Order(
+                orderId,
+                request.getProductId(),
+                request.getQuantity(),
+                request.getAmount(),
+                OrderStatus.PENDING
+        );
+        orderRepository.save(order);
+        logger.info("SAGA: Saved order {} to database with status PENDING", orderId);
+
+        // Publish OrderPlacedEvent to start Choreography Saga
+        try {
+            OrderPlacedEvent event = new OrderPlacedEvent(
+                    orderId,
+                    request.getProductId(),
+                    request.getQuantity(),
+                    request.getAmount(),
+                    "CUSTOMER-001" // Hardcoded customerId for lab demonstration
+            );
+            kafkaTemplate.send("order-events", orderId, event);
+            logger.info("SAGA: Published OrderPlacedEvent for order ID: {}", orderId);
+        } catch (Exception ex) {
+            logger.error("SAGA: Failed to publish OrderPlacedEvent: {}", ex.getMessage());
+            order.setStatus(OrderStatus.CANCELLED);
+            orderRepository.save(order);
+            return new OrderResponse(orderId, "FAILED", "Event publishing failed: " + ex.getMessage());
+        }
+
+        return new OrderResponse(orderId, "PENDING", "Order placed successfully. Processing payment...");
+    }
+
+    /**
+     * Retrieves the status of an existing order.
+     */
+    public String getOrderStatus(String orderId) {
+        return orderRepository.findById(orderId)
+                .map(order -> order.getStatus().name())
+                .orElseThrow(() -> new RuntimeException("Order not found: " + orderId));
     }
 }

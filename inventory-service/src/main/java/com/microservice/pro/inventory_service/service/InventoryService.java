@@ -22,6 +22,9 @@ public class InventoryService {
 
     // ConcurrentHashMap database storing product stock items
     private final Map<String, StockItem> inventory = new ConcurrentHashMap<>();
+    private final Map<String, Reservation> reservationsByOrderId = new ConcurrentHashMap<>();
+
+    public record Reservation(String productId, int quantity) {}
 
     public InventoryService() {
         // Pre-populate data exactly as specified in the requirements
@@ -60,5 +63,47 @@ public class InventoryService {
 
         logger.info("Stock check success: Product {} is available", productId);
         return new StockCheckResponse(productId, quantity, true, remainingStock);
+    }
+
+    /**
+     * Reserves stock for a product and maps it to an order ID.
+     */
+    public void reserveStock(String productId, int quantity, String orderId) {
+        logger.info("SAGA: Reserving stock for Product: {}, Quantity: {}, Order: {}", productId, quantity, orderId);
+        inventory.compute(productId, (key, item) -> {
+            if (item == null) {
+                throw new ProductNotFoundException("Product not found in inventory: " + productId);
+            }
+            if (!item.hasStock(quantity)) {
+                throw new InsufficientStockException("Insufficient stock for product " + productId + ". Requested: " + quantity);
+            }
+            StockItem updated = new StockItem(productId, item.availableQuantity(), item.reservedQuantity() + quantity);
+            reservationsByOrderId.put(orderId, new Reservation(productId, quantity));
+            logger.info("SAGA: Reserved successfully. New state: {}", updated);
+            return updated;
+        });
+    }
+
+    /**
+     * Releases reserved stock for a completed compensation flow.
+     */
+    public void releaseStock(String orderId) {
+        logger.info("SAGA: Releasing stock for Order: {}", orderId);
+        Reservation reservation = reservationsByOrderId.remove(orderId);
+        if (reservation != null) {
+            String productId = reservation.productId();
+            int quantity = reservation.quantity();
+            inventory.compute(productId, (key, item) -> {
+                if (item == null) {
+                    return null;
+                }
+                int newReserved = Math.max(0, item.reservedQuantity() - quantity);
+                StockItem updated = new StockItem(productId, item.availableQuantity(), newReserved);
+                logger.info("SAGA: Released successfully. New state: {}", updated);
+                return updated;
+            });
+        } else {
+            logger.info("SAGA: No reservation found for Order: {}, ignoring compensation (idempotent)", orderId);
+        }
     }
 }
