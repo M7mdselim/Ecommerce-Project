@@ -5,7 +5,7 @@ spring:
   application:
     name: Eureka-server
   config:
-    import: "optional:configserver:http://localhost:8888"
+    import: ${SPRING_CONFIG_IMPORT:optional:configserver:http://localhost:8888}
 
 eureka: 
   client: 
@@ -13,3 +13,9 @@ eureka:
     fetch-registry: false 
   server: 
     enable-self-preservation: false # DEV ONLY
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health, info
