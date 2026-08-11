@@ -25,13 +25,19 @@ public class OrderServiceTest {
 
     private PaymentClient paymentClient;
     private InventoryClient inventoryClient;
+    private com.microservice.pro.order_service.messaging.OrderEventPublisher orderEventPublisher;
+    private com.microservice.pro.order_service.repository.OrderRepository orderRepository;
+    private org.springframework.kafka.core.KafkaTemplate<String, Object> kafkaTemplate;
     private OrderService orderService;
 
     @BeforeEach
     void setUp() {
         paymentClient = mock(PaymentClient.class);
         inventoryClient = mock(InventoryClient.class);
-        orderService = new OrderService(paymentClient, inventoryClient);
+        orderEventPublisher = mock(com.microservice.pro.order_service.messaging.OrderEventPublisher.class);
+        orderRepository = mock(com.microservice.pro.order_service.repository.OrderRepository.class);
+        kafkaTemplate = mock(org.springframework.kafka.core.KafkaTemplate.class);
+        orderService = new OrderService(paymentClient, inventoryClient, orderEventPublisher, orderRepository, kafkaTemplate);
     }
 
     @Test

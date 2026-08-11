@@ -17,6 +17,9 @@
 		},
 		{
 			"path": "order-service"
+		},
+		{
+			"path": "../microservices-pro-platform"
 		}
 	],
 	"settings": {}

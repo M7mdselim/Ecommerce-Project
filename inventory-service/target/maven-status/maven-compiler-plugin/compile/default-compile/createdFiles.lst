@@ -8,6 +8,7 @@ com\microservice\pro\inventory_service\listener\InventorySagaHandler.class
 com\microservice\pro\inventory_service\event\InventoryReservedEvent.class
 com\microservice\pro\inventory_service\exception\ProductNotFoundException.class
 com\microservice\pro\inventory_service\InventoryServiceApplication.class
+com\microservice\pro\inventory_service\saga\InventorySagaCommandHandler.class
 com\microservice\pro\inventory_service\service\InventoryService.class
 com\microservice\pro\inventory_service\exception\InsufficientStockException.class
 com\microservice\pro\inventory_service\entity\StockItem.class

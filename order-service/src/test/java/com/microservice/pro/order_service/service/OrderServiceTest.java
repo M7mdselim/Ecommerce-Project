@@ -25,12 +25,21 @@ public class OrderServiceTest {
     @Mock
     private InventoryClient inventoryClient;
 
+    @Mock
+    private com.microservice.pro.order_service.messaging.OrderEventPublisher orderEventPublisher;
+
+    @Mock
+    private com.microservice.pro.order_service.repository.OrderRepository orderRepository;
+
+    @Mock
+    private org.springframework.kafka.core.KafkaTemplate<String, Object> kafkaTemplate;
+
     private OrderService orderService;
 
     @BeforeEach
     void setUp() {
         MockitoAnnotations.openMocks(this);
-        orderService = new OrderService(paymentClient, inventoryClient);
+        orderService = new OrderService(paymentClient, inventoryClient, orderEventPublisher, orderRepository, kafkaTemplate);
     }
 
     @Test
