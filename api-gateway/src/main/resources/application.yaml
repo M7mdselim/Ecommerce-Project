@@ -1,7 +1,10 @@
 server:
   port: 8080
 
-# JWT Configuration
+# ── JWT / OAuth2 Resource Server ─────────────────────────────────────────────
+# The gateway validates incoming JWTs using this shared HMAC-256 secret.
+# Session 20: JwtAuthFilter + JwtUtil deleted; replaced by Spring Security
+# oauth2-resource-server (see SecurityConfig.java).
 jwt:
   secret: ${JWT_SECRET:microservices-pro-course-secret-key-2024-minimum-256-bits}
 
@@ -40,6 +43,12 @@ spring:
           uri: lb://ORDER-SERVICE
           predicates:
             - Path=/api/orders/**
+
+        # ADMIN-only route — SecurityConfig enforces ROLE_ADMIN; customers get 403
+        - id: order-service-admin
+          uri: lb://ORDER-SERVICE
+          predicates:
+            - Path=/api/orders/admin/**
 
         - id: inventory-service
           uri: lb://INVENTORY-SERVICE

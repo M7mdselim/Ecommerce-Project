@@ -1,0 +1,29 @@
+# ─────────────────────────────────────────────────────────────────────────────
+# Session 21 — PeerAuthentication (STRICT mTLS)
+#
+# Enforces mutual TLS for ALL traffic within the `ecommerce` namespace.
+# After this is applied, every inter-service call (Order → Inventory,
+# Gateway → Product, etc.) MUST use a valid SPIFFE certificate issued by
+# Istio's CA (istiod). Plain-text connections are rejected.
+#
+# Verification command:
+#   istioctl authn tls-check <pod-name>.<namespace> product-service.ecommerce.svc.cluster.local
+#
+# Expected output columns:
+#   STATUS   SERVER    CLIENT   AUTHN POLICY
+#   OK       STRICT    ISTIO_MUTUAL   ...
+#
+# Why STRICT over PERMISSIVE?
+#   PERMISSIVE accepts both plain-text and mTLS (migration mode).
+#   STRICT rejects plain-text completely — the mesh is fully secured.
+# ─────────────────────────────────────────────────────────────────────────────
+apiVersion: security.istio.io/v1beta1
+kind: PeerAuthentication
+metadata:
+  name: default
+  namespace: ecommerce
+spec:
+  mtls:
+    # STRICT: ALL inbound connections to pods in this namespace MUST use mTLS.
+    # Any service calling without a valid SPIFFE cert gets a connection reset.
+    mode: STRICT

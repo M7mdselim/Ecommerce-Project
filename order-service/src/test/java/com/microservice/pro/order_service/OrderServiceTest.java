@@ -1,9 +1,11 @@
 package com.microservice.pro.order_service;
 
 import com.microservice.pro.order_service.dto.*;
+import com.microservice.pro.order_service.outbox.OutboxEventRepository;
 import com.microservice.pro.order_service.service.InventoryClient;
 import com.microservice.pro.order_service.service.OrderService;
 import com.microservice.pro.order_service.service.PaymentClient;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
@@ -27,6 +29,8 @@ public class OrderServiceTest {
     private InventoryClient inventoryClient;
     private com.microservice.pro.order_service.messaging.OrderEventPublisher orderEventPublisher;
     private com.microservice.pro.order_service.repository.OrderRepository orderRepository;
+    private OutboxEventRepository outboxEventRepository;
+    private ObjectMapper objectMapper;
     private org.springframework.kafka.core.KafkaTemplate<String, Object> kafkaTemplate;
     private OrderService orderService;
 
@@ -36,8 +40,11 @@ public class OrderServiceTest {
         inventoryClient = mock(InventoryClient.class);
         orderEventPublisher = mock(com.microservice.pro.order_service.messaging.OrderEventPublisher.class);
         orderRepository = mock(com.microservice.pro.order_service.repository.OrderRepository.class);
+        outboxEventRepository = mock(OutboxEventRepository.class);
+        objectMapper = new ObjectMapper();
         kafkaTemplate = mock(org.springframework.kafka.core.KafkaTemplate.class);
-        orderService = new OrderService(paymentClient, inventoryClient, orderEventPublisher, orderRepository, kafkaTemplate);
+        orderService = new OrderService(paymentClient, inventoryClient, orderEventPublisher,
+                orderRepository, outboxEventRepository, objectMapper, kafkaTemplate);
     }
 
     @Test

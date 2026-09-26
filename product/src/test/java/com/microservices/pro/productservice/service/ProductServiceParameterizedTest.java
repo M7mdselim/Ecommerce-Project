@@ -1,5 +1,6 @@
 package com.microservices.pro.productservice.service;
 
+import com.microservices.pro.productservice.dto.ProductResponse;
 import com.microservices.pro.productservice.model.Product;
 import com.microservices.pro.productservice.repository.ProductRepository;
 import org.junit.jupiter.api.BeforeEach;
@@ -15,6 +16,13 @@ import java.util.Optional;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.Mockito.when;
 
+/**
+ * Parameterized unit tests for {@link ProductService}.
+ *
+ * <p>These tests verify query-side behavior (findById returning a
+ * {@link ProductResponse} projection) across multiple product IDs.
+ * Updated to match the new DTO-based service signatures.
+ */
 class ProductServiceParameterizedTest {
 
     @Mock
@@ -34,8 +42,8 @@ class ProductServiceParameterizedTest {
             "2, Wireless Mouse, true",
             "999, N/A, false"
     })
-    @DisplayName("Parameterized test for product retrieval by ID")
-    void findById_returnsCorrectResult(Long id, String name, boolean shouldExist) {
+    @DisplayName("findById returns read-side DTO or empty depending on repository response")
+    void findById_returnsCorrectReadProjection(Long id, String name, boolean shouldExist) {
         if (shouldExist) {
             Product p = new Product(id, name, "desc", new BigDecimal("99.99"), "ELECTRONICS");
             when(productRepository.findById(id)).thenReturn(Optional.of(p));
@@ -43,11 +51,13 @@ class ProductServiceParameterizedTest {
             when(productRepository.findById(id)).thenReturn(Optional.empty());
         }
 
-        Optional<Product> result = productService.findById(id);
+        Optional<ProductResponse> result = productService.findById(id);
 
         assertThat(result.isPresent()).isEqualTo(shouldExist);
         if (shouldExist) {
-            assertThat(result.get().getName()).isEqualTo(name);
+            assertThat(result.get().name()).isEqualTo(name);
+            // Verify the display-oriented inStock field is set (Task 37)
+            assertThat(result.get().inStock()).isTrue();
         }
     }
 }

@@ -1,6 +1,8 @@
 # Enterprise Ecommerce Microservices Platform — Production Docker Containerization
 
-This repository contains an enterprise-grade Spring Boot 3 & Spring Cloud microservices platform containerized for production deployment. The architecture provides dynamic discovery, centralized configuration, single entry-point API gateway routing, resilient inter-service communication (OpenFeign & Resilience4j), asynchronous event streaming via Apache Kafka (KRaft mode), and Redis caching/rate limiting.
+> 📖 **Full Technical Documentation:** For comprehensive architecture guides, deep-dives into all 7 services, security models, Saga orchestrators, Istio mesh, Transactional Outbox pattern, and k6 stress tests, see [PROJECT_DOCUMENTATION.md](PROJECT_DOCUMENTATION.md).
+
+This repository contains an enterprise-grade Spring Boot 3 & Spring Cloud microservices platform containerized for production deployment. The architecture provides dynamic discovery, centralized configuration, single entry-point API gateway routing, resilient inter-service communication (OpenFeign & Resilience4j), reliable asynchronous event streaming via Apache Kafka (KRaft mode) with the **Transactional Outbox Pattern**, and Redis caching/rate limiting.
 
 ---
 

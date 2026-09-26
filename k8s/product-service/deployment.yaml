@@ -6,6 +6,7 @@ metadata:
   labels:
     app: product-service
     track: stable
+    version: stable   # Required by Kiali for per-version traffic graph visualization
 spec:
   replicas: 8
   selector:
@@ -17,6 +18,9 @@ spec:
       labels:
         app: product-service
         track: stable
+        version: stable              # Kiali uses this to distinguish stable vs canary in the service graph
+      annotations:
+        sidecar.istio.io/inject: "true"  # Explicit opt-in; namespace label is the default trigger
     spec:
       serviceAccountName: product-service-sa
       containers:

@@ -1,5 +1,7 @@
 package com.microservice.pro.order_service.service;
 
+import com.fasterxml.jackson.core.JsonProcessingException;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.microservice.pro.order_service.dto.OrderRequest;
 import com.microservice.pro.order_service.dto.OrderResponse;
 import com.microservice.pro.order_service.dto.PaymentRequest;
@@ -12,6 +14,8 @@ import com.microservice.pro.order_service.event.OrderCreatedEvent;
 import com.microservice.pro.order_service.messaging.OrderEventPublisher;
 import com.microservice.pro.order_service.entity.Order;
 import com.microservice.pro.order_service.entity.OrderStatus;
+import com.microservice.pro.order_service.outbox.OutboxEvent;
+import com.microservice.pro.order_service.outbox.OutboxEventRepository;
 import com.microservice.pro.order_service.repository.OrderRepository;
 import com.microservice.pro.order_service.event.OrderPlacedEvent;
 import org.springframework.kafka.core.KafkaTemplate;
@@ -22,6 +26,7 @@ import io.github.resilience4j.timelimiter.annotation.TimeLimiter;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.context.request.RequestAttributes;
 import org.springframework.web.context.request.RequestContextHolder;
 
@@ -48,24 +53,31 @@ public class OrderService {
     private final InventoryClient inventoryClient;
     private final OrderEventPublisher orderEventPublisher;
     private final OrderRepository orderRepository;
+    private final OutboxEventRepository outboxEventRepository;
+    private final ObjectMapper objectMapper;
     private final KafkaTemplate<String, Object> kafkaTemplate;
     private final Counter ordersCreatedCounter;
 
-    public OrderService(PaymentClient paymentClient, InventoryClient inventoryClient, 
+    public OrderService(PaymentClient paymentClient, InventoryClient inventoryClient,
                         OrderEventPublisher orderEventPublisher, OrderRepository orderRepository,
+                        OutboxEventRepository outboxEventRepository, ObjectMapper objectMapper,
                         KafkaTemplate<String, Object> kafkaTemplate) {
-        this(paymentClient, inventoryClient, orderEventPublisher, orderRepository, kafkaTemplate, new SimpleMeterRegistry());
+        this(paymentClient, inventoryClient, orderEventPublisher, orderRepository,
+             outboxEventRepository, objectMapper, kafkaTemplate, new SimpleMeterRegistry());
     }
 
     @Autowired
-    public OrderService(PaymentClient paymentClient, InventoryClient inventoryClient, 
+    public OrderService(PaymentClient paymentClient, InventoryClient inventoryClient,
                         OrderEventPublisher orderEventPublisher, OrderRepository orderRepository,
+                        OutboxEventRepository outboxEventRepository, ObjectMapper objectMapper,
                         KafkaTemplate<String, Object> kafkaTemplate,
                         MeterRegistry meterRegistry) {
         this.paymentClient = paymentClient;
         this.inventoryClient = inventoryClient;
         this.orderEventPublisher = orderEventPublisher;
         this.orderRepository = orderRepository;
+        this.outboxEventRepository = outboxEventRepository;
+        this.objectMapper = objectMapper;
         this.kafkaTemplate = kafkaTemplate;
         this.ordersCreatedCounter = Counter.builder("orders.created")
                 .description("Total number of orders created successfully")
@@ -181,15 +193,36 @@ public class OrderService {
     }
 
     /**
-     * Creates an order synchronously and publishes an OrderPlacedEvent to start the Saga.
+     * Creates an order synchronously and writes an {@link OutboxEvent} to start the Saga.
+     *
+     * <h3>Outbox Pattern — Session 22 / Lab 18</h3>
+     * <p>The {@code @Transactional} annotation ensures that both the {@code Order} row
+     * and the {@code OutboxEvent} row are written in a <strong>single ACID transaction</strong>.
+     * If either write fails, both are rolled back — the dual-write race condition is eliminated.
+     *
+     * <p><strong>Before (broken):</strong>
+     * <pre>
+     *   orderRepository.save(order);         // DB txn committed
+     *   kafkaTemplate.send(...);              // if this throws → order stuck PENDING forever
+     * </pre>
+     *
+     * <p><strong>After (fixed):</strong>
+     * <pre>
+     *   // Same transaction:
+     *   orderRepository.save(order);         // writes to DB
+     *   outboxEventRepository.save(outbox);  // writes to DB (same txn)
+     *   // txn committed atomically ↑
+     *   // OutboxEventRelay publishes to Kafka asynchronously, with retries
+     * </pre>
      */
+    @Transactional
     public OrderResponse createOrder(OrderRequest request) {
         String orderId = UUID.randomUUID().toString();
         logger.info("SAGA: Initiating order creation. Order ID: {}, Product ID: {}, Quantity: {}, Amount: {}",
                 orderId, request.getProductId(), request.getQuantity(), request.getAmount());
 
         try {
-            // Step 1: Sync pre-check stock
+            // Step 1: Sync pre-check stock (outside main txn is fine — read-only)
             StockCheckResponse stockResponse = inventoryClient.checkStock(request.getProductId(), request.getQuantity());
             if (stockResponse == null || !stockResponse.available()) {
                 logger.warn("SAGA: Insufficient stock on pre-check. Rejecting order ID: {}", orderId);
@@ -200,7 +233,7 @@ public class OrderService {
             return new OrderResponse(orderId, "REJECTED", "Inventory check failed: " + ex.getMessage());
         }
 
-        // Save order as PENDING
+        // Step 2: Save order as PENDING
         Order order = new Order(
                 orderId,
                 request.getProductId(),
@@ -212,22 +245,32 @@ public class OrderService {
         ordersCreatedCounter.increment();
         logger.info("SAGA: Saved order {} to database with status PENDING", orderId);
 
-        // Publish OrderPlacedEvent to start Choreography Saga
+        // Step 3: Write the Outbox event in the SAME transaction (replaces direct kafkaTemplate.send)
+        // ─────────────────────────────────────────────────────────────────────────────────────────
+        // WHY: if we published directly to Kafka here and Kafka was unavailable,
+        //      the order would be saved but no saga would ever start.
+        //      Writing to the outbox table guarantees the event survives a Kafka outage.
+        //      The OutboxEventRelay will pick it up and publish it asynchronously.
         try {
             OrderPlacedEvent event = new OrderPlacedEvent(
                     orderId,
                     request.getProductId(),
                     request.getQuantity(),
                     request.getAmount(),
-                    "CUSTOMER-001" // Hardcoded customerId for lab demonstration
+                    "CUSTOMER-001"
             );
-            kafkaTemplate.send("order-events", orderId, event);
-            logger.info("SAGA: Published OrderPlacedEvent for order ID: {}", orderId);
-        } catch (Exception ex) {
-            logger.error("SAGA: Failed to publish OrderPlacedEvent: {}", ex.getMessage());
-            order.setStatus(OrderStatus.CANCELLED);
-            orderRepository.save(order);
-            return new OrderResponse(orderId, "FAILED", "Event publishing failed: " + ex.getMessage());
+            String payload = objectMapper.writeValueAsString(event);
+            OutboxEvent outboxEvent = new OutboxEvent(
+                    "order-events",
+                    orderId,
+                    payload,
+                    OrderPlacedEvent.class.getName()
+            );
+            outboxEventRepository.save(outboxEvent);
+            logger.info("SAGA: Wrote OutboxEvent for order {} — relay will publish to Kafka.", orderId);
+        } catch (JsonProcessingException ex) {
+            // This should never happen for a well-formed POJO — rethrow to roll back the whole txn
+            throw new IllegalStateException("Failed to serialize OrderPlacedEvent for outbox: " + ex.getMessage(), ex);
         }
 
         return new OrderResponse(orderId, "PENDING", "Order placed successfully. Processing payment...");

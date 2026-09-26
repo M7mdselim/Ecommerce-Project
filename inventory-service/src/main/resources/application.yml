@@ -1,6 +1,11 @@
 server:
   port: 8084
 
+# Shared HMAC-256 secret used by the gateway to sign JWTs.
+# The inventory service uses it to validate tokens forwarded by the order service.
+jwt:
+  secret: ${JWT_SECRET:microservices-pro-course-secret-key-2024-minimum-256-bits}
+
 spring:
   application:
     name: inventory-service
