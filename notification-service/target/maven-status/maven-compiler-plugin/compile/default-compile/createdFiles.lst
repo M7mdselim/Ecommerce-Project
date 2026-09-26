@@ -1,0 +1,3 @@
+com\microservice\pro\notification_service\event\OrderCreatedEvent.class
+com\microservice\pro\notification_service\NotificationServiceApplication.class
+com\microservice\pro\notification_service\service\NotificationService.class
