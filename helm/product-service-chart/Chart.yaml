@@ -1,0 +1,8 @@
+apiVersion: v2
+name: product-service-chart
+description: |
+  Helm chart for Product Service — Session 16.
+  Packages: Deployment, Service, HPA, ServiceAccount, Role, RoleBinding.
+type: application
+version: 0.1.0
+appVersion: "1.0.0"

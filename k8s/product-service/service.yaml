@@ -1,0 +1,23 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: product-service
+  namespace: ecommerce
+  labels:
+    app: product-service
+spec:
+  type: ClusterIP
+  selector:
+    # NOTE: intentionally selects ALL pods with app=product-service regardless
+    # of track label. Istio's VirtualService + DestinationRule handle the
+    # 80/20 weighted split at the Envoy proxy layer, NOT via selector filtering.
+    app: product-service
+  ports:
+    - port: 8081
+      targetPort: 8081
+      protocol: TCP
+      # IMPORTANT: Istio requires the port name to start with the protocol name
+      # (http, grpc, tcp, etc.) to enable L7 VirtualService routing.
+      # Without this, Istio treats the traffic as opaque TCP and ignores
+      # VirtualService weight rules.
+      name: http

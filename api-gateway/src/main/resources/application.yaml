@@ -1,7 +1,10 @@
 server:
   port: 8080
 
-# JWT Configuration
+# ── JWT / OAuth2 Resource Server ─────────────────────────────────────────────
+# The gateway validates incoming JWTs using this shared HMAC-256 secret.
+# Session 20: JwtAuthFilter + JwtUtil deleted; replaced by Spring Security
+# oauth2-resource-server (see SecurityConfig.java).
 jwt:
   secret: ${JWT_SECRET:microservices-pro-course-secret-key-2024-minimum-256-bits}
 
@@ -36,15 +39,37 @@ spring:
                 redis-rate-limiter.requestedTokens: 1
                 key-resolver: "#{@ipKeyResolver}"
 
+        - id: order-service
+          uri: lb://ORDER-SERVICE
+          predicates:
+            - Path=/api/orders/**
+
+        # ADMIN-only route — SecurityConfig enforces ROLE_ADMIN; customers get 403
+        - id: order-service-admin
+          uri: lb://ORDER-SERVICE
+          predicates:
+            - Path=/api/orders/admin/**
+
+        - id: inventory-service
+          uri: lb://INVENTORY-SERVICE
+          predicates:
+            - Path=/api/v1/inventory/**
+
 # Eureka Client Discovery Configuration
 eureka:
   client:
     service-url:
       defaultZone: ${EUREKA_CLIENT_SERVICEURL_DEFAULTZONE:http://localhost:8761/eureka/}
 
-# Spring Boot Actuator Management Configurations
+# Spring Boot Actuator & Tracing Management Configurations
 management:
+  tracing:
+    sampling:
+      probability: 1.0
+  zipkin:
+    tracing:
+      endpoint: ${MANAGEMENT_ZIPKIN_TRACING_ENDPOINT:http://localhost:9411/api/v2/spans}
   endpoints:
     web:
       exposure:
-        include: health,info,gateway
+        include: health,info,gateway,metrics,prometheus

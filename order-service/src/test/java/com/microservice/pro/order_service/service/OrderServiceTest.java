@@ -1,6 +1,8 @@
 package com.microservice.pro.order_service.service;
 
 import com.microservice.pro.order_service.dto.*;
+import com.microservice.pro.order_service.outbox.OutboxEventRepository;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.mockito.Mock;
@@ -25,12 +27,26 @@ public class OrderServiceTest {
     @Mock
     private InventoryClient inventoryClient;
 
+    @Mock
+    private com.microservice.pro.order_service.messaging.OrderEventPublisher orderEventPublisher;
+
+    @Mock
+    private com.microservice.pro.order_service.repository.OrderRepository orderRepository;
+
+    @Mock
+    private OutboxEventRepository outboxEventRepository;
+
+    @Mock
+    private org.springframework.kafka.core.KafkaTemplate<String, Object> kafkaTemplate;
+
     private OrderService orderService;
 
     @BeforeEach
     void setUp() {
         MockitoAnnotations.openMocks(this);
-        orderService = new OrderService(paymentClient, inventoryClient);
+        ObjectMapper objectMapper = new ObjectMapper();
+        orderService = new OrderService(paymentClient, inventoryClient, orderEventPublisher,
+                orderRepository, outboxEventRepository, objectMapper, kafkaTemplate);
     }
 
     @Test

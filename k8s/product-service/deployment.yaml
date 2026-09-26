@@ -1,0 +1,73 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: product-service
+  namespace: ecommerce
+  labels:
+    app: product-service
+    track: stable
+    version: stable   # Required by Kiali for per-version traffic graph visualization
+spec:
+  replicas: 8
+  selector:
+    matchLabels:
+      app: product-service
+      track: stable
+  template:
+    metadata:
+      labels:
+        app: product-service
+        track: stable
+        version: stable              # Kiali uses this to distinguish stable vs canary in the service graph
+      annotations:
+        sidecar.istio.io/inject: "true"  # Explicit opt-in; namespace label is the default trigger
+    spec:
+      serviceAccountName: product-service-sa
+      containers:
+        - name: product-service
+          image: ghcr.io/m7mdselim/ecommerce-platform/product-service:latest
+          ports:
+            - containerPort: 8081
+              name: http
+          env:
+            - name: SPRING_PROFILES_ACTIVE
+              value: "kubernetes"
+            - name: EUREKA_CLIENT_SERVICEURL_DEFAULTZONE
+              valueFrom:
+                configMapKeyRef:
+                  name: platform-config
+                  key: eureka.url
+            - name: SPRING_DATASOURCE_URL
+              valueFrom:
+                configMapKeyRef:
+                  name: platform-config
+                  key: datasource.url
+            - name: SPRING_DATASOURCE_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: product-service-secret
+                  key: db-password
+
+          readinessProbe:
+            httpGet:
+              path: /actuator/health/readiness
+              port: 8081
+            initialDelaySeconds: 30
+            periodSeconds: 10
+            failureThreshold: 3
+
+          livenessProbe:
+            httpGet:
+              path: /actuator/health/liveness
+              port: 8081
+            initialDelaySeconds: 60
+            periodSeconds: 30
+            failureThreshold: 3
+
+          resources:
+            requests:
+              cpu: "200m"
+              memory: "512Mi"
+            limits:
+              cpu: "1000m"
+              memory: "768Mi"

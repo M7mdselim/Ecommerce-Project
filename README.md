@@ -1,6 +1,8 @@
 # Enterprise Ecommerce Microservices Platform — Production Docker Containerization
 
-This repository contains an enterprise-grade Spring Boot 3 & Spring Cloud microservices platform containerized for production deployment. The architecture provides dynamic discovery, centralized configuration, single entry-point API gateway routing, resilient inter-service communication (OpenFeign & Resilience4j), asynchronous event streaming via Apache Kafka (KRaft mode), and Redis caching/rate limiting.
+> 📖 **Full Technical Documentation:** For comprehensive architecture guides, deep-dives into all 7 services, security models, Saga orchestrators, Istio mesh, Transactional Outbox pattern, and k6 stress tests, see [PROJECT_DOCUMENTATION.md](PROJECT_DOCUMENTATION.md).
+
+This repository contains an enterprise-grade Spring Boot 3 & Spring Cloud microservices platform containerized for production deployment. The architecture provides dynamic discovery, centralized configuration, single entry-point API gateway routing, resilient inter-service communication (OpenFeign & Resilience4j), reliable asynchronous event streaming via Apache Kafka (KRaft mode) with the **Transactional Outbox Pattern**, and Redis caching/rate limiting.
 
 ---
 
@@ -26,6 +28,7 @@ graph TD
         Order[Order Service :8082]
         Payment[Payment Service :8083]
         Inventory[Inventory Service :8084]
+        Notification[Notification Service :8085]
     end
 
     Config -.->|Fetches Remote Configurations| Github[GitHub Config Repo]
@@ -37,6 +40,7 @@ graph TD
     Config -.->|Provides Config| Order
     Config -.->|Provides Config| Payment
     Config -.->|Provides Config| Inventory
+    Config -.->|Provides Config| Notification
 
     %% Discovery Registration
     Eureka <--->|Service Registry| Gateway
@@ -44,6 +48,7 @@ graph TD
     Eureka <--->|Register & Lookup| Order
     Eureka <--->|Register & Lookup| Payment
     Eureka <--->|Register & Lookup| Inventory
+    Eureka <--->|Register & Lookup| Notification
 
     %% Gateway Routing & Redis
     Gateway -->|Routes via Eureka| Product
@@ -57,6 +62,7 @@ graph TD
     Order -->|Produce Order Events| KF
     Payment -->|Consume / Produce Events| KF
     Inventory -->|Consume / Produce Events| KF
+    Notification <---|Consume Events / Retry & DLT| KF
     Product <--->|Response Caching| RD
 ```
 
@@ -79,6 +85,7 @@ graph LR
         node_order[order-service:8082]
         node_payment[payment-service:8083]
         node_inventory[inventory-service:8084]
+        node_notification[notification-service:8085]
     end
 
     Host[Host System] -->|Port 8080| node_gateway
@@ -138,6 +145,10 @@ Every microservice uses an optimized two-stage Dockerfile built on Eclipse Temur
 | **Order Service** | `order-service` | `8082` | `/actuator/health` | Order orchestration & OpenFeign integration |
 | **Payment Service** | `payment-service` | `8083` | `/actuator/health` | Billing & payment processing |
 | **Inventory Service**| `inventory-service`| `8084` | `/actuator/health` | Stock availability & reservation |
+| **Notification Service**| `notification-service`| `8085` | `/actuator/health` | Resilient Kafka notification consumer with @RetryableTopic & DLT |
+| **Zipkin** | `zipkin` | `9411` | `/health` | Distributed tracing collector & web UI |
+| **Prometheus** | `prometheus` | `9090` | `/-/healthy` | Metrics scraping & time-series database |
+| **Grafana** | `grafana` | `3000` | `/api/health` | Metrics dashboards & visualization |
 
 ---
 

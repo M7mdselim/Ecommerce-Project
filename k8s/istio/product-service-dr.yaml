@@ -1,0 +1,74 @@
+# ─────────────────────────────────────────────────────────────────────────────
+# Session 21 — DestinationRule for product-service
+#
+# Defines two traffic subsets that Istio's load balancer will use:
+#   • stable  — pods with label  track=stable  (the 8-replica stable build)
+#   • canary  — pods with label  track=canary  (the 2-replica canary build)
+#
+# The VirtualService (product-service-vs.yaml) references these subset names
+# to route 80 % of traffic to stable and 20 % to canary.
+#
+# outlierDetection (circuit-breaking at the mesh level):
+# ──────────────────────────────────────────────────────
+# Envoy tracks the health of individual endpoints (pods) within each subset.
+# If a pod returns >= 5 consecutive 5xx errors in a 30-second window,
+# Envoy ejects it from the load-balancing pool for 30 seconds, then
+# re-admits it (with exponential backoff up to 3 minutes).
+#
+# This is mesh-level circuit breaking — it works at the TCP/HTTP level
+# inside the sidecar proxy WITHOUT any changes to application code.
+# It complements (not replaces) Resilience4j circuit breaking, which
+# operates at the business-logic level.
+# ─────────────────────────────────────────────────────────────────────────────
+apiVersion: networking.istio.io/v1beta1
+kind: DestinationRule
+metadata:
+  name: product-service-dr
+  namespace: ecommerce
+spec:
+  host: product-service   # Must match the Kubernetes Service name exactly
+
+  trafficPolicy:
+    # ── Outlier Detection (mesh-level circuit breaking) ───────────────────────
+    # Applied globally to ALL subsets of this service unless overridden below.
+    outlierDetection:
+      # Scan the health of every endpoint every 30 seconds
+      interval: 30s
+
+      # Eject a pod after 5 consecutive gateway-error (5xx) responses
+      consecutiveGatewayErrors: 5
+
+      # Keep ejected pods out of rotation for at least 30 seconds
+      baseEjectionTime: 30s
+
+      # Never eject more than 50 % of pods at once (keeps the service alive)
+      maxEjectionPercent: 50
+
+      # Minimum number of requests in the analysis window before ejection
+      # can trigger — prevents false positives on low-traffic pods
+      minHealthPercent: 0
+
+    # ── Connection pool limits (prevent cascading overload) ───────────────────
+    connectionPool:
+      http:
+        # Maximum concurrent requests to a single upstream pod
+        http1MaxPendingRequests: 100
+        http2MaxRequests: 1000
+
+  # ── Traffic Subsets (referenced by VirtualService) ────────────────────────
+  subsets:
+    - name: stable
+      labels:
+        track: stable   # Matches deployment.yaml  labels.track=stable
+
+    - name: canary
+      labels:
+        track: canary   # Matches deployment-canary.yaml  labels.track=canary
+      # Canary-specific traffic policy: tighter outlier detection
+      # so misbehaving canary pods are ejected faster than stable pods
+      trafficPolicy:
+        outlierDetection:
+          consecutiveGatewayErrors: 3   # Fail faster on canary (less tolerance)
+          interval: 10s                 # Check more frequently
+          baseEjectionTime: 60s         # Longer cooling period for canary pods
+          maxEjectionPercent: 100       # Allow ejecting all canary pods if needed

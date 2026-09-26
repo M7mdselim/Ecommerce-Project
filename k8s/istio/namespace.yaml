@@ -1,0 +1,22 @@
+# ─────────────────────────────────────────────────────────────────────────────
+# Session 21 — Istio Namespace Setup
+#
+# Enables automatic Envoy sidecar injection for every pod in the `ecommerce`
+# namespace. Once applied, every new or restarted pod receives a second
+# container (istio-proxy), which is why `kubectl get pods -n ecommerce` will
+# show 2/2 containers for each pod.
+#
+# Apply BEFORE deploying services:
+#   kubectl label namespace ecommerce istio-injection=enabled
+#   kubectl apply -f namespace.yaml
+#
+# Verify injection is active:
+#   kubectl get namespace ecommerce --show-labels
+# ─────────────────────────────────────────────────────────────────────────────
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: ecommerce
+  labels:
+    # This label is the trigger that makes Istio's webhook inject the sidecar
+    istio-injection: enabled

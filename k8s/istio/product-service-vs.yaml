@@ -1,0 +1,64 @@
+# ─────────────────────────────────────────────────────────────────────────────
+# Session 21 — VirtualService for 80/20 Weighted Traffic Split
+#
+# Routes incoming HTTP requests to product-service across two subsets:
+#   • 80 % → stable  (proven production build)
+#   • 20 % → canary  (new build under validation)
+#
+# WHY VirtualService instead of replica-count-based splitting?
+# ────────────────────────────────────────────────────────────
+# The old approach: 8 stable + 2 canary replicas ≈ 80/20 split by pod count.
+# Problems with that approach:
+#   1. Split accuracy depends on the K8s scheduler; not exactly 80/20.
+#   2. Adding more canary pods changes the ratio — it's coupled to scaling.
+#   3. You can't do 1/99 without running hundreds of pods.
+#
+# Istio VirtualService weights are traffic-based:
+#   • Envoy in each calling pod enforces the 80/20 split in software.
+#   • You can run a single canary pod and still get exactly 20 % of traffic.
+#   • Changing the split is a 1-line YAML change, no pod restarts needed.
+#
+# Verification:
+#   for i in $(seq 1 50); do
+#     curl -s http://product-service.ecommerce.svc.cluster.local:8081/api/v1/products \
+#       -o /dev/null -w "%{http_code}\n"
+#   done
+#   # Observe: ~40 requests hit stable, ~10 hit canary (check access logs / Kiali)
+# ─────────────────────────────────────────────────────────────────────────────
+apiVersion: networking.istio.io/v1beta1
+kind: VirtualService
+metadata:
+  name: product-service-vs
+  namespace: ecommerce
+spec:
+  # Which Kubernetes Service (host) this VirtualService controls
+  hosts:
+    - product-service
+
+  http:
+    - name: weighted-split
+      route:
+        # ── Stable: 80 % of traffic ──────────────────────────────────────────
+        - destination:
+            host: product-service
+            subset: stable   # Defined in product-service-dr.yaml
+          weight: 80
+
+        # ── Canary: 20 % of traffic ──────────────────────────────────────────
+        - destination:
+            host: product-service
+            subset: canary   # Defined in product-service-dr.yaml
+          weight: 20
+
+      # ── Retry policy ─────────────────────────────────────────────────────────
+      # Automatically retry on connection failures and 5xx before counting as
+      # a failure. Works alongside outlierDetection in the DestinationRule.
+      retries:
+        attempts: 3
+        perTryTimeout: 5s
+        retryOn: connect-failure,reset,5xx,gateway-error
+
+      # ── Timeout ──────────────────────────────────────────────────────────────
+      # If the upstream does not respond within 10 s, Envoy returns 504 to the
+      # caller. This complements Resilience4j's @TimeLimiter (application level).
+      timeout: 10s
