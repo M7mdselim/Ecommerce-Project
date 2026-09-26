@@ -144,6 +144,9 @@ Every microservice uses an optimized two-stage Dockerfile built on Eclipse Temur
 | **Payment Service** | `payment-service` | `8083` | `/actuator/health` | Billing & payment processing |
 | **Inventory Service**| `inventory-service`| `8084` | `/actuator/health` | Stock availability & reservation |
 | **Notification Service**| `notification-service`| `8085` | `/actuator/health` | Resilient Kafka notification consumer with @RetryableTopic & DLT |
+| **Zipkin** | `zipkin` | `9411` | `/health` | Distributed tracing collector & web UI |
+| **Prometheus** | `prometheus` | `9090` | `/-/healthy` | Metrics scraping & time-series database |
+| **Grafana** | `grafana` | `3000` | `/api/health` | Metrics dashboards & visualization |
 
 ---
 

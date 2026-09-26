@@ -28,6 +28,11 @@ import org.springframework.web.context.request.RequestContextHolder;
 import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
 
+import io.micrometer.core.instrument.Counter;
+import io.micrometer.core.instrument.MeterRegistry;
+import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
+import org.springframework.beans.factory.annotation.Autowired;
+
 /**
  * OrderService manages order lifecycle events including stock checking, billing, and fulfillment.
  * 
@@ -44,16 +49,27 @@ public class OrderService {
     private final OrderEventPublisher orderEventPublisher;
     private final OrderRepository orderRepository;
     private final KafkaTemplate<String, Object> kafkaTemplate;
+    private final Counter ordersCreatedCounter;
 
-    // Constructor injection
     public OrderService(PaymentClient paymentClient, InventoryClient inventoryClient, 
                         OrderEventPublisher orderEventPublisher, OrderRepository orderRepository,
                         KafkaTemplate<String, Object> kafkaTemplate) {
+        this(paymentClient, inventoryClient, orderEventPublisher, orderRepository, kafkaTemplate, new SimpleMeterRegistry());
+    }
+
+    @Autowired
+    public OrderService(PaymentClient paymentClient, InventoryClient inventoryClient, 
+                        OrderEventPublisher orderEventPublisher, OrderRepository orderRepository,
+                        KafkaTemplate<String, Object> kafkaTemplate,
+                        MeterRegistry meterRegistry) {
         this.paymentClient = paymentClient;
         this.inventoryClient = inventoryClient;
         this.orderEventPublisher = orderEventPublisher;
         this.orderRepository = orderRepository;
         this.kafkaTemplate = kafkaTemplate;
+        this.ordersCreatedCounter = Counter.builder("orders.created")
+                .description("Total number of orders created successfully")
+                .register(meterRegistry);
     }
 
     /**
@@ -98,6 +114,7 @@ public class OrderService {
                         paymentResponse.getStatus(), paymentResponse.getTransactionId());
 
                 if ("APPROVED".equalsIgnoreCase(paymentResponse.getStatus())) {
+                    ordersCreatedCounter.increment();
                     return new OrderResponse(
                             orderId,
                             "CONFIRMED",
@@ -192,6 +209,7 @@ public class OrderService {
                 OrderStatus.PENDING
         );
         orderRepository.save(order);
+        ordersCreatedCounter.increment();
         logger.info("SAGA: Saved order {} to database with status PENDING", orderId);
 
         // Publish OrderPlacedEvent to start Choreography Saga
