@@ -21,12 +21,14 @@ import org.springframework.security.oauth2.server.resource.authentication.JwtGra
 import org.springframework.security.oauth2.server.resource.authentication.ReactiveJwtAuthenticationConverterAdapter;
 import org.springframework.security.web.server.SecurityWebFilterChain;
 import org.springframework.security.web.server.context.NoOpServerSecurityContextRepository;
+import org.springframework.cloud.gateway.filter.ratelimit.KeyResolver;
 import org.springframework.web.server.ServerWebExchange;
 import reactor.core.publisher.Mono;
 
 import javax.crypto.spec.SecretKeySpec;
 import java.nio.charset.StandardCharsets;
 import java.util.List;
+import java.util.Optional;
 
 /**
  * Gateway Security Configuration — Session 20.
@@ -104,14 +106,14 @@ public class SecurityConfig {
             .securityContextRepository(NoOpServerSecurityContextRepository.getInstance())
             .authorizeExchange(exchanges -> exchanges
                 // ── Public routes (no token required) ──────────────────────────────
-                .pathMatchers(HttpMethod.GET, "/api/products/**").permitAll()
-                .pathMatchers("/actuator/health", "/actuator/info").permitAll()
+                .pathMatchers(HttpMethod.GET, "/api/products", "/api/products/**").permitAll()
+                .pathMatchers("/actuator/**").permitAll()
 
                 // ── ADMIN-only routes (403 for ROLE_USER, 200 for ROLE_ADMIN) ──────
                 .pathMatchers("/api/orders/admin/**").hasAuthority("ROLE_ADMIN")
-                .pathMatchers(HttpMethod.POST, "/api/products/**").hasAuthority("ROLE_ADMIN")
-                .pathMatchers(HttpMethod.PUT, "/api/products/**").hasAuthority("ROLE_ADMIN")
-                .pathMatchers(HttpMethod.DELETE, "/api/products/**").hasAuthority("ROLE_ADMIN")
+                .pathMatchers(HttpMethod.POST, "/api/products", "/api/products/**").hasAuthority("ROLE_ADMIN")
+                .pathMatchers(HttpMethod.PUT, "/api/products", "/api/products/**").hasAuthority("ROLE_ADMIN")
+                .pathMatchers(HttpMethod.DELETE, "/api/products", "/api/products/**").hasAuthority("ROLE_ADMIN")
 
                 // ── All other routes: any authenticated user ────────────────────────
                 .anyExchange().authenticated()
@@ -123,6 +125,18 @@ public class SecurityConfig {
             );
 
         return http.build();
+    }
+
+    /**
+     * IP Key Resolver for Spring Cloud Gateway RequestRateLimiter filter.
+     */
+    @Bean
+    public KeyResolver ipKeyResolver() {
+        return exchange -> Mono.just(
+            Optional.ofNullable(exchange.getRequest().getRemoteAddress())
+                .map(addr -> addr.getAddress().getHostAddress())
+                .orElse("anonymous")
+        );
     }
 
     /**

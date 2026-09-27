@@ -64,11 +64,11 @@ services:
       KAFKA_LOG_DIRS: '/tmp/kraft-combined-logs'
       CLUSTER_ID: 'MkU3OEVBNTcwNTJENDM2Qk'
     healthcheck:
-      test: ["CMD", "kafka-topics", "--bootstrap-server", "localhost:9092", "--list"]
-      interval: 10s
-      timeout: 10s
-      retries: 5
-      start_period: 15s
+      test: ["CMD-SHELL", "bash -c 'exec 3<>/dev/tcp/127.0.0.1/29092'"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 35s
 
   # =========================================================================
   # CORE SPRING CLOUD INFRASTRUCTURE

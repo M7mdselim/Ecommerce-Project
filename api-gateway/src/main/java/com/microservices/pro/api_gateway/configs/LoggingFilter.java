@@ -1,3 +1,5 @@
+package com.microservices.pro.api_gateway.configs;
+
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.cloud.gateway.filter.GatewayFilterChain;

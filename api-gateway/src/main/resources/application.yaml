@@ -27,10 +27,10 @@ spring:
         - id: product-service
           uri: lb://PRODUCT-SERVICE
           predicates:
-            - Path=/api/products/**
+            - Path=/api/products, /api/products/**
           filters:
-            # Rewrites client request path from /api/products/* to backend /api/v1/products/*
-            - RewritePath=/api/products(?<segment>.*), /api/v1/products$\{segment}
+            # Rewrites client request path from /api/products to /api/v1/products
+            - RewritePath=/api/products(?<segment>.*), /api/v1/products$1
             - AddResponseHeader=X-Platform, microservices-pro
             - name: RequestRateLimiter
               args:
@@ -42,7 +42,7 @@ spring:
         - id: order-service
           uri: lb://ORDER-SERVICE
           predicates:
-            - Path=/api/orders/**
+            - Path=/api/orders, /api/orders/**
 
         # ADMIN-only route — SecurityConfig enforces ROLE_ADMIN; customers get 403
         - id: order-service-admin

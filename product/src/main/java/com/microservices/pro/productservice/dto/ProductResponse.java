@@ -25,7 +25,9 @@ public record ProductResponse(
         String category,
         /** Display-oriented field: true when price > 0 (stub — real impl consults Inventory). */
         boolean inStock
-) {
+) implements java.io.Serializable {
+
+    private static final long serialVersionUID = 1L;
 
     /**
      * Maps a {@link Product} entity to this read projection.
