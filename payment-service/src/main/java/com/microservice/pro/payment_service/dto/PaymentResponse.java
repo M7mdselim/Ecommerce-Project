@@ -6,6 +6,7 @@ public class PaymentResponse {
     private String status;
     private String transactionId;
     private BigDecimal amount;
+    private String message;
 
     public PaymentResponse() {}
 
@@ -13,6 +14,14 @@ public class PaymentResponse {
         this.status = status;
         this.transactionId = transactionId;
         this.amount = amount;
+        this.message = status;
+    }
+
+    public PaymentResponse(String status, String transactionId, BigDecimal amount, String message) {
+        this.status = status;
+        this.transactionId = transactionId;
+        this.amount = amount;
+        this.message = message;
     }
 
     public String getStatus() {
@@ -37,5 +46,30 @@ public class PaymentResponse {
 
     public void setAmount(BigDecimal amount) {
         this.amount = amount;
+    }
+
+    public String getMessage() {
+        return message != null ? message : status;
+    }
+
+    public void setMessage(String message) {
+        this.message = message;
+    }
+
+    // Record-style accessors
+    public String status() {
+        return status;
+    }
+
+    public String transactionId() {
+        return transactionId;
+    }
+
+    public BigDecimal amount() {
+        return amount;
+    }
+
+    public String message() {
+        return getMessage();
     }
 }

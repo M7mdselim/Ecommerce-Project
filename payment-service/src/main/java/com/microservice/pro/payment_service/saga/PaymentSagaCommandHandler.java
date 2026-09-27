@@ -46,7 +46,7 @@ public class PaymentSagaCommandHandler {
 
             try {
                 PaymentResponse response = paymentService.processPayment(new PaymentRequest(orderId, amount));
-                if ("SUCCESS".equals(response.status())) {
+                if ("SUCCESS".equalsIgnoreCase(response.status()) || "APPROVED".equalsIgnoreCase(response.status())) {
                     Map<String, Object> result = Map.of(
                             "type", "PaymentResultEvent",
                             "orderId", orderId,
