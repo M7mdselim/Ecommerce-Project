@@ -20,7 +20,8 @@ import org.springframework.test.context.TestPropertySource;
 @PactFolder("../order-service/target/pacts")
 @TestPropertySource(properties = {
         "eureka.client.enabled=false",
-        "spring.cloud.config.enabled=false"
+        "spring.cloud.config.enabled=false",
+        "security.enabled=false"
 })
 class InventoryServicePactVerificationTest {
 
@@ -48,5 +49,17 @@ class InventoryServicePactVerificationTest {
     @State("PROD-001 has 100 units in stock")
     void setupProd001FullStock() {
         // State is pre-configured by default in InventoryService constructor for PROD-001
+    }
+
+    @org.springframework.boot.test.context.TestConfiguration
+    static class TestSecurityConfig {
+        @org.springframework.context.annotation.Bean
+        @org.springframework.core.annotation.Order(1)
+        public org.springframework.security.web.SecurityFilterChain testSecurityFilterChain(
+                org.springframework.security.config.annotation.web.builders.HttpSecurity http) throws Exception {
+            http.csrf(csrf -> csrf.disable())
+                .authorizeHttpRequests(auth -> auth.anyRequest().permitAll());
+            return http.build();
+        }
     }
 }

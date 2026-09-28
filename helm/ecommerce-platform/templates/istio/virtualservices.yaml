@@ -1,0 +1,27 @@
+{{- if .Values.istio.enabled }}
+apiVersion: networking.istio.io/v1beta1
+kind: VirtualService
+metadata:
+  name: api-gateway-ingress-vs
+  namespace: {{ .Values.global.namespace }}
+  labels:
+    {{- include "ecommerce-platform.labels" . | nindent 4 }}
+spec:
+  hosts:
+    - "*"
+  gateways:
+    - {{ .Values.istio.gateway.name }}
+    - mesh
+  http:
+    - match:
+        - uri:
+            prefix: /api/
+        - uri:
+            prefix: /actuator/
+      route:
+        - destination:
+            host: {{ .Values.services.apiGateway.name }}
+            port:
+              number: {{ .Values.services.apiGateway.port }}
+      timeout: 10s
+{{- end }}

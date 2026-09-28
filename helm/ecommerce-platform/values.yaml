@@ -1,0 +1,135 @@
+global:
+  namespace: ecommerce
+  environment: production
+  imageRegistry: ghcr.io/m7mdselim/ecommerce-platform
+  imagePullPolicy: IfNotPresent
+  jwtSecret: "microservices-pro-course-secret-key-2024-minimum-256-bits"
+
+infrastructure:
+  postgres:
+    enabled: true
+    image: postgres:16-alpine
+    storage: 5Gi
+    password: postgres
+    database: microservices_pro
+  redis:
+    enabled: true
+    image: redis:7-alpine
+  kafka:
+    enabled: true
+    image: confluentinc/cp-kafka:7.6.1
+    storage: 10Gi
+
+istio:
+  enabled: true
+  gateway:
+    name: ecommerce-gateway
+    port: 80
+  mTLS:
+    mode: STRICT
+
+services:
+  apiGateway:
+    name: api-gateway
+    port: 8080
+    replicas: 2
+    image: api-gateway:latest
+    resources:
+      requests:
+        cpu: 200m
+        memory: 512Mi
+      limits:
+        cpu: 1000m
+        memory: 1024Mi
+    autoscaling:
+      enabled: true
+      minReplicas: 2
+      maxReplicas: 10
+      targetCPUUtilizationPercentage: 70
+
+  productService:
+    name: product-service
+    port: 8081
+    replicas: 2
+    image: product-service:latest
+    resources:
+      requests:
+        cpu: 200m
+        memory: 512Mi
+      limits:
+        cpu: 1000m
+        memory: 1024Mi
+    autoscaling:
+      enabled: true
+      minReplicas: 2
+      maxReplicas: 10
+      targetCPUUtilizationPercentage: 70
+
+  orderService:
+    name: order-service
+    port: 8082
+    replicas: 2
+    image: order-service:latest
+    resources:
+      requests:
+        cpu: 200m
+        memory: 512Mi
+      limits:
+        cpu: 1000m
+        memory: 1024Mi
+    autoscaling:
+      enabled: true
+      minReplicas: 2
+      maxReplicas: 10
+      targetCPUUtilizationPercentage: 70
+
+  inventoryService:
+    name: inventory-service
+    port: 8084
+    replicas: 2
+    image: inventory-service:latest
+    resources:
+      requests:
+        cpu: 150m
+        memory: 384Mi
+      limits:
+        cpu: 800m
+        memory: 768Mi
+    autoscaling:
+      enabled: true
+      minReplicas: 2
+      maxReplicas: 8
+      targetCPUUtilizationPercentage: 70
+
+  paymentService:
+    name: payment-service
+    port: 8083
+    replicas: 2
+    image: payment-service:latest
+    resources:
+      requests:
+        cpu: 150m
+        memory: 384Mi
+      limits:
+        cpu: 800m
+        memory: 768Mi
+    autoscaling:
+      enabled: true
+      minReplicas: 2
+      maxReplicas: 8
+      targetCPUUtilizationPercentage: 70
+
+  notificationService:
+    name: notification-service
+    port: 8085
+    replicas: 1
+    image: notification-service:latest
+    resources:
+      requests:
+        cpu: 100m
+        memory: 256Mi
+      limits:
+        cpu: 500m
+        memory: 512Mi
+    autoscaling:
+      enabled: false

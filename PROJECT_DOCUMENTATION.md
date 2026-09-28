@@ -27,10 +27,11 @@
 17. [Local Development](#17-local-development)
 18. [Environment Variables Reference](#18-environment-variables-reference)
 19. [API Reference](#19-api-reference)
-20. [Transactional Outbox Pattern (Session 22)](#20-transactional-outbox-pattern-session-22)
+20. [Transactional Outbox Pattern & Distributed Tracing (Session 22)](#20-transactional-outbox-pattern--distributed-tracing-session-22)
 21. [Performance & Stress Testing — k6 (Session 23)](#21-performance--stress-testing--k6-session-23)
-22. [Technical Debt & Production Readiness](#22-technical-debt--production-readiness)
-23. [Design Decisions Log](#23-design-decisions-log)
+22. [Idempotency Key Pattern (Session 24)](#22-idempotency-key-pattern-session-24)
+23. [Technical Debt & Production Readiness](#23-technical-debt--production-readiness)
+24. [Design Decisions Log](#24-design-decisions-log)
 
 ---
 
@@ -90,8 +91,8 @@ Supporting Infrastructure:
 | **payment-service** | 8083 | Java/MVC | — (stateless) | Kafka |
 | **inventory-service** | 8084 | Java/MVC | In-memory Map | Kafka |
 | **notification-service** | 8085 | Java/MVC | — (stateless) | Kafka consumer |
-| **config-server** | 8888 | Java | Git / classpath | All services |
-| **eureka** | 8761 | Java | In-memory | All services |
+| **config-server** | 8888 | Java | Git (`Ecommerce-Config-Training`) | All services |
+| **discovery-server** | 8761 | Java | In-memory | All services |
 
 ---
 
@@ -587,57 +588,66 @@ public record ProductResponse(
 
 ---
 
-## 12. Kubernetes Deployment
+## 12. Kubernetes Deployment (Enterprise Platform)
 
-**Namespace:** `ecommerce`
+**Namespace:** `ecommerce` (with `istio-injection=enabled`)
 
-### K8s Resources (Product Service)
+### Unified Kustomize Deployment
+The entire platform is organized under `k8s/` and can be deployed with a single command:
+```bash
+kubectl apply -k k8s/
+```
 
-| File | Kind | Purpose |
+### Complete Platform Manifest Catalogue
+
+| Directory / File | Kind | Purpose |
 |---|---|---|
-| [`deployment.yaml`](file:///d:/Microservices Training/Ecommerce Project/k8s/product-service/deployment.yaml) | Deployment | Stable build (8 replicas, `track=stable`) |
-| [`deployment-canary.yaml`](file:///d:/Microservices Training/Ecommerce Project/k8s/product-service/deployment-canary.yaml) | Deployment | Canary build (2 replicas, `track=canary`) |
-| [`service.yaml`](file:///d:/Microservices Training/Ecommerce Project/k8s/product-service/service.yaml) | Service | ClusterIP, port 8081, name=`http` (Istio L7) |
-| [`configmap.yaml`](file:///d:/Microservices Training/Ecommerce Project/k8s/product-service/configmap.yaml) | ConfigMap | `platform-config` — Eureka URL, datasource URL |
-| [`secret.yaml`](file:///d:/Microservices Training/Ecommerce Project/k8s/product-service/secret.yaml) | Secret | DB password (base64 encoded) |
-| [`hpa.yaml`](file:///d:/Microservices Training/Ecommerce Project/k8s/product-service/hpa.yaml) | HPA | Auto-scale on CPU; 2–10 replicas at 70% |
+| [`k8s/kustomization.yaml`](file:///d:/Microservices Training/Ecommerce Project/k8s/kustomization.yaml) | Kustomization | Root manifest bundling all resources, configs, and mesh policies |
+| [`k8s/platform-config.yaml`](file:///d:/Microservices Training/Ecommerce Project/k8s/platform-config.yaml) | ConfigMap | Shared platform config: Eureka, PostgreSQL, Kafka, Redis, Zipkin |
+| [`k8s/platform-secrets.yaml`](file:///d:/Microservices Training/Ecommerce Project/k8s/platform-secrets.yaml) | Secret | Shared HMAC-256 JWT secret and PostgreSQL database credentials |
+| [`k8s/infrastructure/postgres.yaml`](file:///d:/Microservices Training/Ecommerce Project/k8s/infrastructure/postgres.yaml) | StatefulSet + Service | PostgreSQL 16 ACID database with 5Gi PersistentVolumeClaim |
+| [`k8s/infrastructure/redis.yaml`](file:///d:/Microservices Training/Ecommerce Project/k8s/infrastructure/redis.yaml) | Deployment + Service | Redis 7 in-memory cache and token-bucket rate limiter store |
+| [`k8s/infrastructure/kafka-kraft.yaml`](file:///d:/Microservices Training/Ecommerce Project/k8s/infrastructure/kafka-kraft.yaml) | StatefulSet + Service | Apache Kafka KRaft broker (no ZooKeeper) with 10Gi PersistentVolumeClaim |
+| [`k8s/api-gateway/`](file:///d:/Microservices Training/Ecommerce Project/k8s/api-gateway/) | Deployment, Service, HPA | Edge Ingress router (Port 8080) with auto-scaling (2–10 replicas) |
+| [`k8s/product-service/`](file:///d:/Microservices Training/Ecommerce Project/k8s/product-service/) | Deployment, Service, HPA | Product catalog with canary deployment and auto-scaling (2–10 replicas) |
+| [`k8s/order-service/`](file:///d:/Microservices Training/Ecommerce Project/k8s/order-service/) | Deployment, Service, HPA | Order orchestrator and Outbox publisher with auto-scaling (2–10 replicas) |
+| [`k8s/inventory-service/`](file:///d:/Microservices Training/Ecommerce Project/k8s/inventory-service/) | Deployment, Service, HPA | Inventory stock management with auto-scaling (2–8 replicas) |
+| [`k8s/payment-service/`](file:///d:/Microservices Training/Ecommerce Project/k8s/payment-service/) | Deployment, Service, HPA | Payment processor with auto-scaling (2–8 replicas) |
+| [`k8s/notification-service/`](file:///d:/Microservices Training/Ecommerce Project/k8s/notification-service/) | Deployment, Service | Asynchronous Kafka event consumer worker |
 
-### Resource Limits (per pod)
-```yaml
-requests: { cpu: 200m, memory: 512Mi }
-limits:   { cpu: 1000m, memory: 768Mi }
-```
-
-### Health Probes
-```yaml
-readinessProbe: /actuator/health/readiness  (delay 30s, period 10s)
-livenessProbe:  /actuator/health/liveness   (delay 60s, period 30s)
-```
+### Universal Production Hardening
+Every business microservice container adheres to standard cloud-native standards:
+- **Zero-Downtime Rolling Updates:** `maxSurge: 25%`, `maxUnavailable: 0`
+- **Sidecar Injection:** Automated Envoy injection via `sidecar.istio.io/inject: "true"`
+- **Probes:** `readinessProbe` (/actuator/health/readiness), `livenessProbe` (/actuator/health/liveness), `startupProbe` (5s interval, 12 retries for slow JVM startup)
+- **Auto-Scaling (HPA):** Scales up at 70% average CPU utilization
 
 ---
 
-## 13. Helm Chart (Product Service)
+## 13. Helm Charts
 
-**Location:** `helm/product-service-chart/`
+The platform provides two Helm solutions: an **Enterprise Umbrella Chart** for the whole platform, and dedicated charts for individual services.
 
-### Templates
+### 13.1 Enterprise Umbrella Chart (`helm/ecommerce-platform/`)
+Deploy, upgrade, or rollback the complete multi-service stack with a single release:
 
-| Template | Kubernetes Kind | Notes |
-|---|---|---|
-| `deployment.yaml` | Deployment | Templated image, replicas, probes, resources |
-| `service.yaml` | Service | ClusterIP, port from values |
-| `hpa.yaml` | HorizontalPodAutoscaler | Enabled by `autoscaling.enabled` |
-| `serviceaccount.yaml` | ServiceAccount | `product-service-sa` |
-| `role.yaml` | Role | Least-privilege RBAC |
-| `rolebinding.yaml` | RoleBinding | Binds role to SA |
+```bash
+# Production installation (Multi-replica, HPA enabled, strict quotas):
+helm install ecommerce ./helm/ecommerce-platform -f ./helm/ecommerce-platform/values-prod.yaml -n ecommerce --create-namespace
 
-### Key Values
+# Development installation (Single-replica, lightweight resource requests):
+helm install ecommerce ./helm/ecommerce-platform -f ./helm/ecommerce-platform/values-dev.yaml -n ecommerce --create-namespace
+```
 
-```yaml
-replicaCount: 2
-image:
-  repository: ghcr.io/m7mdselim/ecommerce-platform/product-service
-  tag: latest
+#### Package Structure
+- `templates/_helpers.tpl`: Standardized naming, labels (`app.kubernetes.io/part-of`), and selectors.
+- `templates/configmap.yaml` & `secret.yaml`: Centralized environment and security injection.
+- `templates/infrastructure/`: Templates for PostgreSQL, Redis, and Kafka KRaft with PVCs.
+- `templates/microservices/`: Parameterized templates dynamically looping over `.Values.services`.
+- `templates/istio/`: Ingress Gateway, VirtualServices, and strict mTLS rules.
+
+### 13.2 Standalone Service Chart (`helm/product-service-chart/`)
+Dedicated chart for CI/CD pipelines deploying `product-service` independently.
 autoscaling:
   enabled: true
   minReplicas: 2
@@ -870,7 +880,7 @@ GET /api/v1/inventory/check?productId=PROD-001&quantity=5
 
 ---
 
-## 20. Transactional Outbox Pattern (Session 22)
+## 20. Transactional Outbox Pattern & Distributed Tracing (Session 22)
 
 ### 20.1 The Dual-Write Problem
 In microservices architectures, writing to a database and publishing an event to a message broker within the same business operation is a classic **dual-write hazard**:
@@ -903,7 +913,8 @@ To guarantee **at-least-once message delivery** without relying on complex and s
 │  OutboxEventRelay (@Scheduled every 5s)                             │
 │        │                                                            │
 │        ├───► Poll findPendingEvents(limit = 100)                     │
-│        ├───► kafkaTemplate.send(topic, key, payload) ──► Kafka      │
+│        ├───► Inject B3 & W3C Tracing Headers                        │
+│        ├───► kafkaTemplate.send(producerRecord)      ──► Kafka      │
 │        ├───► If SUCCESS: markPublished()                            │
 │        └───► If FAILURE: increment retryCount (retried next tick)   │
 └─────────────────────────────────────────────────────────────────────┘
@@ -918,6 +929,7 @@ To guarantee **at-least-once message delivery** without relying on complex and s
   - `eventType` (`OrderPlacedEvent`)
   - `status` (`PENDING` / `PUBLISHED`)
   - `retryCount` (tracks delivery failure attempts for alerting)
+  - `traceId` & `spanId` (distributed tracing context)
   - `createdAt` & `publishedAt` (audit timestamps)
 - **`OutboxEventRepository`**: Spring Data JPA repository with native query:
   ```sql
@@ -926,13 +938,40 @@ To guarantee **at-least-once message delivery** without relying on complex and s
 - **`OutboxEventRelay`**: Background worker executed every 5,000ms:
   - Decorated with `@Scheduled(fixedDelay = 5000)`.
   - Relays pending records to Kafka KRaft.
+  - Constructs `ProducerRecord<String, String>` and populates tracing headers.
   - Handles transient network drops by catching exceptions and incrementing `retryCount` rather than crashing the relay.
 
 ### 20.3 Verification & Unit Test Results
-Three dedicated unit tests in `OutboxEventRelayTest` validate the relay behavior:
+Four dedicated unit tests in `OutboxEventRelayTest` validate the relay behavior:
 1. `relay_whenKafkaAvailable_publishesEventAndMarksPublished` — Confirms successful Kafka dispatch and state transition to `PUBLISHED`.
 2. `relay_whenKafkaUnavailable_keepsEventPendingAndIncrementsRetry` — Verifies resilience during broker downtime (status remains `PENDING`, `retryCount` increments).
 3. `relay_whenNoPendingEvents_doesNothing` — Verifies no redundant Kafka calls when outbox queue is clear.
+4. `relay_whenTraceContextPresent_injectsTracingHeadersIntoKafkaRecord` — Verifies `X-B3-TraceId`, `X-B3-SpanId`, `X-B3-Sampled: 1`, and W3C `traceparent` headers are properly injected into the Kafka `ProducerRecord`.
+
+### 20.4 Distributed Tracing Context Propagation Across Outbox
+#### The Asynchronous Context Loss Problem
+In synchronous HTTP processing, OpenTelemetry and Micrometer automatically carry the `traceId` and `spanId` via thread-local state. However, in the Transactional Outbox pattern:
+1. The client request thread saves the event to the database and terminates.
+2. The asynchronous `@Scheduled` thread in `OutboxEventRelay` awakens later on a separate worker thread that possesses no active span context.
+3. If dispatched without tracing metadata, downstream consumers (`PaymentService`, `InventoryService`, `NotificationService`) generate **brand-new trace IDs**, breaking the Zipkin distributed trace graph into disconnected fragments.
+
+#### In-Band Trace Header Propagation Solution
+1. **Context Capture on Ingress:** `OrderService.createOrder()` accesses the active Micrometer `Tracer` span:
+   ```java
+   String traceId = null;
+   String spanId = null;
+   if (tracer != null && tracer.currentSpan() != null) {
+       traceId = tracer.currentSpan().context().traceId();
+       spanId = tracer.currentSpan().context().spanId();
+   }
+   ```
+2. **Database Persistence:** Trace identifiers are stored directly on the `OutboxEvent` record in `outbox_events` atomically alongside the order.
+3. **Kafka Header Injection:** When `OutboxEventRelay` polls and constructs the `ProducerRecord`, it embeds both standard Zipkin B3 headers and W3C trace context headers:
+   - `X-B3-TraceId`: Hex string trace ID
+   - `X-B3-SpanId`: Hex string span ID
+   - `X-B3-Sampled`: `"1"`
+   - `traceparent`: `00-${traceId}-${spanId}-01`
+4. **End-to-End Lineage:** Downstream consumers seamlessly extract these headers, rendering an unbroken distributed trace across the entire microservice ecosystem in Zipkin.
 
 ---
 
@@ -991,27 +1030,104 @@ k6 run --out web-dashboard k6/checkout-stress-test.js
 
 ---
 
-## 22. Technical Debt & Production Readiness
+## 22. Idempotency Key Pattern (Session 24)
 
-### 22.1 Resolved Debt
+### 22.1 The Duplicate Order Problem
+In distributed e-commerce architectures, client retries caused by network timeouts, mobile reconnection events, or accidental double clicks on "Place Order" can dispatch identical requests to `POST /api/orders`:
+- **Financial Risk:** If each request executes as a new purchase, customers suffer multiple unauthorized credit card charges.
+- **Inventory Depletion:** Duplicate Saga orchestrations lock and consume double the warehouse stock.
+- **Pipeline Pollution:** Downstream fulfillment, shipping, and ERP pipelines process phantom orders.
+
+### 22.2 Idempotency Architecture
+To ensure **exactly-once processing semantics** from the client's perspective, the **Idempotency Key Pattern** was implemented in `order-service`:
+
+```
+┌───────────────────────────────── Order Service ─────────────────────────────────┐
+│ Client Request                                                                  │
+│ POST /api/orders                                                                │
+│ Headers: [Idempotency-Key: "idemp-abc-123", Authorization: Bearer ...]          │
+│ Body: {"productId": "PROD-001", "quantity": 2, "amount": 299.99}                │
+│                           │                                                     │
+│                           ▼                                                     │
+│               OrderController.createOrder()                                     │
+│                           │                                                     │
+│                           ▼                                                     │
+│               OrderService.createOrder(request, idempotencyKey)                 │
+│                           │                                                     │
+│       ┌───────────────────┴───────────────────┐                                 │
+│       │ Idempotency-Key present in DB?        │                                 │
+│       └─────────┬───────────────────┬─────────┘                                 │
+│            YES  │                   │  NO (or no header supplied)               │
+│                 ▼                   ▼                                           │
+│       Deserialize cached      [BEGIN @Transactional]                            │
+│       responsePayload         1. Save Order (PENDING)                           │
+│       Return cached 200 OK    2. Save OutboxEvent (with trace context)          │
+│       (Zero duplicate writes) 3. Save IdempotentRequest (orderId, jsonResponse) │
+│                               [COMMIT TRANSACTION]                              │
+│                               Return freshly minted OrderResponse               │
+└─────────────────────────────────────────────────────────────────────────────────┘
+```
+
+### 22.3 Implementation Details
+- **Entity Model (`IdempotentRequest`)**:
+  - `idempotencyKey` (`VARCHAR(255)`, Primary Key)
+  - `orderId` (`VARCHAR(255)`, nullable)
+  - `responsePayload` (`TEXT`, serialized `OrderResponse` JSON)
+  - `status` (`PROCESSED`)
+  - `createdAt` (`LocalDateTime`)
+- **Repository (`IdempotentRequestRepository`)**:
+  - Spring Data JPA repository extending `JpaRepository<IdempotentRequest, String>`.
+- **Atomic Transactional Guarantee**:
+  - In `OrderService.createOrder()`, the creation of the `Order`, the `OutboxEvent`, and the `IdempotentRequest` are executed inside a single `@Transactional` boundary. If inventory validation fails or an exception occurs, the transaction rolls back cleanly, ensuring that failed attempts do not permanently block subsequent valid attempts with the same key.
+- **Fast-Path Replay Cache**:
+  - When a duplicate request arrives, `idempotentRequestRepository.findById(idempotencyKey)` intercepts the call before any business logic, deserializes `responsePayload`, and immediately returns the cached `OrderResponse` (HTTP 200). No new orders or outbox events are inserted into the database.
+- **Backward Compatibility**:
+  - The `Idempotency-Key` header on `OrderController` is marked with `required = false`. Clients omitting the header continue through normal order creation.
+
+### 22.4 Automated Test Suite (Order Service)
+Three unit tests in `IdempotencyPatternTest` guarantee idempotency correctness:
+1. `createOrder_whenIdempotencyKeyProvided_savesRequestAndReturnsResponse` — Confirms first-time requests persist the `IdempotentRequest` entity alongside the order.
+2. `createOrder_whenDuplicateIdempotencyKey_returnsCachedResponseWithoutDuplicateOrderOrOutbox` — Verifies repeated submissions return the cached payload with zero new orders or outbox events.
+3. `createOrder_whenNoIdempotencyKey_processesNormally` — Confirms non-idempotent legacy requests process without regression.
+
+### 22.5 Payment Service Idempotency Keys (Session 22 Lab 18 Task 2)
+In addition to the order ingress layer, `payment-service` enforces the Idempotency Key Pattern on downstream payment execution (`POST /api/v1/payments` and `POST /api/payments`) to eliminate duplicate billing risk if Resilience4j `@Retry` executes the same payment call twice:
+- **`IdempotencyRecord` Entity**:
+  - `idempotencyKey` (`VARCHAR(255)`, Primary Key)
+  - `orderId` (`VARCHAR(255)`, Not Null)
+  - `status` (`PROCESSING` | `COMPLETED` | `FAILED`)
+  - `responsePayload` (`TEXT`, stores `transactionId` or failure reason)
+  - `createdAt` (`Instant`, used for 24h retention cleanup)
+- **`IdempotencyRepository`**: Spring Data JPA repository extending `JpaRepository<IdempotencyRecord, String>` with `findByCreatedAtBefore()`.
+- **Payment Controller Semantics**:
+  - **New Key:** Stores `IdempotencyRecord` with status `PROCESSING` before executing payment logic. Upon successful charge, transitions status to `COMPLETED` and stores `transactionId`.
+  - **Duplicate Key (COMPLETED):** Bypasses payment gateway entirely, returning cached `200 OK` with existing `transactionId`.
+  - **Duplicate Key (PROCESSING):** Returns `202 Accepted` ("Payment already in progress"), preventing concurrent double-execution races.
+- **Verification (`PaymentControllerTest`)**: 4 unit tests verifying new keys, duplicate completed keys, duplicate processing keys (202 Accepted), and non-idempotent requests. All 4 tests passing (100% green).
+
+---
+
+## 23. Technical Debt & Production Readiness
+
+### 23.1 Resolved Debt
 - [x] **Dual-Write Vulnerability (Session 22):** Resolved via Transactional Outbox pattern with atomic database commits and scheduled polling relay.
 - [x] **Java 26 / Byte Buddy Mocking:** Resolved via `-Dnet.bytebuddy.experimental=true` in Surefire configurations across microservices.
 - [x] **Canary Traffic Decoupling (Session 21):** Resolved via Istio `VirtualService` 80/20 weighted routing, completely decoupling deployment canary testing from replica count ratios.
 - [x] **Gateway Security Boundary (Session 20):** Resolved via Spring Security OAuth2 resource server with header propagation (`X-User-Id`, `X-User-Role`).
+- [x] **Idempotency Key Pattern (Session 24):** Resolved via `IdempotentRequest` persistence table and atomic transactional caching in `order-service`. Prevents duplicate orders, double billing, and redundant Kafka sagas upon client retries.
+- [x] **Distributed Tracing in Outbox (Session 24):** Resolved by capturing active Micrometer `Tracer` span (`traceId`, `spanId`) into `OutboxEvent` and injecting Zipkin B3 (`X-B3-TraceId`, `X-B3-SpanId`, `X-B3-Sampled`) and W3C `traceparent` headers in `OutboxEventRelay`.
 
-### 22.2 Open Technical Debt (Actionable Roadmap)
+### 23.2 Open Technical Debt (Actionable Roadmap)
 
 | Priority | Item | Impact | Recommended Solution |
 |---|---|---|---|
-| **HIGH** | **Idempotency Key Pattern** | Client retries during network timeouts can create duplicate orders and double billing. | Require `Idempotency-Key` header on `POST /api/orders`; store key in database within transaction. |
 | **MEDIUM** | **Outbox CDC Migration** | Polling outbox every 5s introduces a 0–5s event propagation latency and continuous DB polling load. | Deploy **Debezium** Kafka Connect connector to stream database WAL / binlog changes directly to Kafka. |
 | **MEDIUM** | **Database Persistence for Order & Inventory** | Order service currently defaults to H2; Inventory uses an in-memory Map. | Migrate both to PostgreSQL with Liquibase or Flyway database migrations. |
 | **MEDIUM** | **Asymmetric Token Signing (RS256)** | Gateway and services currently use symmetric HS256 secret sharing. | Transition to RS256 with OpenID Connect provider (Keycloak) and JWKS public key verification. |
-| **LOW** | **Distributed Tracing in Outbox** | Async polling relay loses the original client's Zipkin trace context across the outbox table boundary. | Store `traceparent` / `b3` headers in `OutboxEvent` columns and inject them into `ProducerRecord` headers during relay. |
 
 ---
 
-## 23. Design Decisions Log
+## 24. Design Decisions Log
 
 | Decision | Rationale |
 |---|---|
@@ -1028,4 +1144,7 @@ k6 run --out web-dashboard k6/checkout-stress-test.js
 | **Transactional Outbox over 2PC / XA** | Distributed two-phase commits introduce locking, high latency, and single points of failure. Outbox provides local ACID consistency with at-least-once asynchronous event delivery. |
 | **Polling Outbox Relay over CDC for dev** | Polling via `@Scheduled` requires zero additional infrastructure (no Kafka Connect / Debezium cluster) while completely solving the dual-write correctness problem. |
 | **k6 over JMeter / Gatling** | Scriptable in standard modern JavaScript; minimal resource footprint; native support for custom real-time metrics (`Counter`, `Trend`, `Rate`) tracking individual resilience aspects. |
+| **Idempotency Key in Database Transaction** | Atomic persistence of order, outbox event, and idempotency key guarantees that cached replay payload is only saved when the order successfully commits. |
+| **Dual Tracing Headers (B3 + W3C traceparent)** | Populating both Zipkin B3 headers and standard W3C `traceparent` ensures universal interoperability across diverse tracing agents (Micrometer, OpenTelemetry, Istio Envoy). |
+
 

@@ -1,0 +1,14 @@
+apiVersion: v2
+name: ecommerce-platform
+description: Enterprise Umbrella Helm Chart for full Ecommerce Microservices Platform (7 Services + Backing Infra + Istio Mesh)
+type: application
+version: 1.0.0
+appVersion: "1.0.0"
+keywords:
+  - microservices
+  - spring-boot
+  - kafka
+  - istio
+  - ecommerce
+maintainers:
+  - name: Mohammed Selim

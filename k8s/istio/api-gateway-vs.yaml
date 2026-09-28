@@ -1,0 +1,23 @@
+apiVersion: networking.istio.io/v1beta1
+kind: VirtualService
+metadata:
+  name: api-gateway-vs
+  namespace: ecommerce
+spec:
+  hosts:
+    - "*"
+  gateways:
+    - ecommerce-gateway
+    - mesh
+  http:
+    - match:
+        - uri:
+            prefix: /api/
+        - uri:
+            prefix: /actuator/
+      route:
+        - destination:
+            host: api-gateway
+            port:
+              number: 8080
+      timeout: 10s

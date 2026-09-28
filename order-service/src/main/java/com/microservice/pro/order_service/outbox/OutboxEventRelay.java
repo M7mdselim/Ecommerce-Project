@@ -2,11 +2,13 @@ package com.microservice.pro.order_service.outbox;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.apache.kafka.clients.producer.ProducerRecord;
 import org.springframework.kafka.core.KafkaTemplate;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.nio.charset.StandardCharsets;
 import java.util.List;
 
 /**
@@ -81,19 +83,42 @@ public class OutboxEventRelay {
      * Publishes a single outbox event to Kafka and marks it PUBLISHED.
      * Each event runs in its own transaction so a failed event does not
      * block subsequent events from being published.
+     *
+     * <p>Distributed tracing context (B3 and W3C traceparent) is preserved across
+     * the database boundary and injected into Kafka record headers.
      */
     @Transactional
     public void publishOne(OutboxEvent event) {
         try {
+            ProducerRecord<String, String> record = new ProducerRecord<>(
+                    event.getTopic(),
+                    event.getMessageKey(),
+                    event.getPayload()
+            );
+
+            // Inject Distributed Tracing context (Zipkin B3 + W3C traceparent)
+            if (event.getTraceId() != null && !event.getTraceId().isBlank()) {
+                String traceId = event.getTraceId();
+                String spanId = (event.getSpanId() != null && !event.getSpanId().isBlank())
+                        ? event.getSpanId() : traceId;
+
+                record.headers().add("X-B3-TraceId", traceId.getBytes(StandardCharsets.UTF_8));
+                record.headers().add("X-B3-SpanId", spanId.getBytes(StandardCharsets.UTF_8));
+                record.headers().add("X-B3-Sampled", "1".getBytes(StandardCharsets.UTF_8));
+                // Standard W3C Trace Context: version-traceId-spanId-traceFlags
+                record.headers().add("traceparent", ("00-" + traceId + "-" + spanId + "-01").getBytes(StandardCharsets.UTF_8));
+
+                log.debug("[OUTBOX-RELAY] Injected distributed trace headers: traceId={}, spanId={}", traceId, spanId);
+            }
+
             // Synchronous send — blocks until broker acknowledges (or throws)
-            kafkaTemplate.send(event.getTopic(), event.getMessageKey(), event.getPayload())
-                         .get(); // .get() converts the ListenableFuture to a blocking call
+            kafkaTemplate.send(record).get();
 
             event.markPublished();
             outboxEventRepository.save(event);
 
-            log.info("[OUTBOX-RELAY] Published event id={} topic={} key={}",
-                     event.getId(), event.getTopic(), event.getMessageKey());
+            log.info("[OUTBOX-RELAY] Published event id={} topic={} key={} traceId={}",
+                     event.getId(), event.getTopic(), event.getMessageKey(), event.getTraceId());
 
         } catch (Exception ex) {
             event.incrementRetry();

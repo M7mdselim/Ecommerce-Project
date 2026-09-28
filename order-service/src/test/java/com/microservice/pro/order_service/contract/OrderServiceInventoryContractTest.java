@@ -5,6 +5,7 @@ import au.com.dius.pact.consumer.dsl.LambdaDsl;
 import au.com.dius.pact.consumer.dsl.PactDslWithProvider;
 import au.com.dius.pact.consumer.junit5.PactConsumerTestExt;
 import au.com.dius.pact.consumer.junit5.PactTestFor;
+import au.com.dius.pact.core.model.PactSpecVersion;
 import au.com.dius.pact.core.model.RequestResponsePact;
 import au.com.dius.pact.core.model.annotations.Pact;
 import org.junit.jupiter.api.DisplayName;
@@ -17,7 +18,7 @@ import java.util.Map;
 import static org.assertj.core.api.Assertions.assertThat;
 
 @ExtendWith(PactConsumerTestExt.class)
-@PactTestFor(providerName = "inventory-service")
+@PactTestFor(providerName = "inventory-service", pactVersion = PactSpecVersion.V3)
 class OrderServiceInventoryContractTest {
 
     @Pact(consumer = "order-service", provider = "inventory-service")
@@ -34,9 +35,9 @@ class OrderServiceInventoryContractTest {
                 .headers(Map.of("Content-Type", "application/json"))
                 .body(LambdaDsl.newJsonBody(body -> {
                     body.stringValue("productId", "PROD-001");
+                    body.numberType("requestedQuantity", 5);
                     body.booleanValue("available", true);
                     body.numberType("remainingStock", 95);
-                    body.stringValue("message", "Stock available");
                 }).build())
                 .toPact();
     }

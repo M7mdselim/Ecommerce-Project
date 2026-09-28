@@ -18,6 +18,9 @@ import com.microservice.pro.order_service.outbox.OutboxEvent;
 import com.microservice.pro.order_service.outbox.OutboxEventRepository;
 import com.microservice.pro.order_service.repository.OrderRepository;
 import com.microservice.pro.order_service.event.OrderPlacedEvent;
+import com.microservice.pro.order_service.idempotency.IdempotentRequest;
+import com.microservice.pro.order_service.idempotency.IdempotentRequestRepository;
+import io.micrometer.tracing.Tracer;
 import org.springframework.kafka.core.KafkaTemplate;
 import io.github.resilience4j.bulkhead.annotation.Bulkhead;
 import io.github.resilience4j.circuitbreaker.annotation.CircuitBreaker;
@@ -54,31 +57,48 @@ public class OrderService {
     private final OrderEventPublisher orderEventPublisher;
     private final OrderRepository orderRepository;
     private final OutboxEventRepository outboxEventRepository;
+    private final IdempotentRequestRepository idempotentRequestRepository;
     private final ObjectMapper objectMapper;
     private final KafkaTemplate<String, Object> kafkaTemplate;
     private final Counter ordersCreatedCounter;
+    private final Tracer tracer;
 
     public OrderService(PaymentClient paymentClient, InventoryClient inventoryClient,
                         OrderEventPublisher orderEventPublisher, OrderRepository orderRepository,
                         OutboxEventRepository outboxEventRepository, ObjectMapper objectMapper,
                         KafkaTemplate<String, Object> kafkaTemplate) {
         this(paymentClient, inventoryClient, orderEventPublisher, orderRepository,
-             outboxEventRepository, objectMapper, kafkaTemplate, new SimpleMeterRegistry());
+             outboxEventRepository, null, objectMapper, kafkaTemplate, new SimpleMeterRegistry(), null);
+    }
+
+    public OrderService(PaymentClient paymentClient, InventoryClient inventoryClient,
+                        OrderEventPublisher orderEventPublisher, OrderRepository orderRepository,
+                        OutboxEventRepository outboxEventRepository,
+                        IdempotentRequestRepository idempotentRequestRepository,
+                        ObjectMapper objectMapper,
+                        KafkaTemplate<String, Object> kafkaTemplate) {
+        this(paymentClient, inventoryClient, orderEventPublisher, orderRepository,
+             outboxEventRepository, idempotentRequestRepository, objectMapper, kafkaTemplate, new SimpleMeterRegistry(), null);
     }
 
     @Autowired
     public OrderService(PaymentClient paymentClient, InventoryClient inventoryClient,
                         OrderEventPublisher orderEventPublisher, OrderRepository orderRepository,
-                        OutboxEventRepository outboxEventRepository, ObjectMapper objectMapper,
+                        OutboxEventRepository outboxEventRepository,
+                        @Autowired(required = false) IdempotentRequestRepository idempotentRequestRepository,
+                        ObjectMapper objectMapper,
                         KafkaTemplate<String, Object> kafkaTemplate,
-                        MeterRegistry meterRegistry) {
+                        MeterRegistry meterRegistry,
+                        @Autowired(required = false) Tracer tracer) {
         this.paymentClient = paymentClient;
         this.inventoryClient = inventoryClient;
         this.orderEventPublisher = orderEventPublisher;
         this.orderRepository = orderRepository;
         this.outboxEventRepository = outboxEventRepository;
+        this.idempotentRequestRepository = idempotentRequestRepository;
         this.objectMapper = objectMapper;
         this.kafkaTemplate = kafkaTemplate;
+        this.tracer = tracer;
         this.ordersCreatedCounter = Counter.builder("orders.created")
                 .description("Total number of orders created successfully")
                 .register(meterRegistry);
@@ -217,6 +237,40 @@ public class OrderService {
      */
     @Transactional
     public OrderResponse createOrder(OrderRequest request) {
+        return createOrder(request, null);
+    }
+
+    /**
+     * Creates an order with Idempotency Key validation and Outbox Pattern persistence.
+     *
+     * <h3>Idempotency Pattern (Session 22 / Lab 18 Tech Debt)</h3>
+     * <p>If the client supplies an {@code Idempotency-Key} header and a matching record is
+     * found in the database, the cached {@link OrderResponse} is returned immediately.
+     * No duplicate order row, stock deduction, or Kafka event is produced.
+     *
+     * <h3>Distributed Tracing Context Propagation</h3>
+     * <p>Active Zipkin/W3C trace context is extracted via Micrometer {@link Tracer} and
+     * persisted in the {@link OutboxEvent} record so the background relay publishes to
+     * Kafka with unbroken distributed traces.
+     */
+    @Transactional
+    public OrderResponse createOrder(OrderRequest request, String idempotencyKey) {
+        // Step 0: Check idempotency key if provided
+        if (idempotencyKey != null && !idempotencyKey.isBlank() && idempotentRequestRepository != null) {
+            String trimmedKey = idempotencyKey.trim();
+            java.util.Optional<IdempotentRequest> existing = idempotentRequestRepository.findByIdempotencyKey(trimmedKey);
+            if (existing.isPresent()) {
+                logger.info("IDEMPOTENCY: Duplicate request detected for key '{}'. Returning cached response for order ID: {}",
+                        trimmedKey, existing.get().getOrderId());
+                try {
+                    return objectMapper.readValue(existing.get().getResponsePayload(), OrderResponse.class);
+                } catch (JsonProcessingException e) {
+                    logger.warn("IDEMPOTENCY: Failed to deserialize cached response payload, returning standard response: {}", e.getMessage());
+                    return new OrderResponse(existing.get().getOrderId(), "PENDING", "Order placed successfully. Processing payment...");
+                }
+            }
+        }
+
         String orderId = UUID.randomUUID().toString();
         logger.info("SAGA: Initiating order creation. Order ID: {}, Product ID: {}, Quantity: {}, Amount: {}",
                 orderId, request.getProductId(), request.getQuantity(), request.getAmount());
@@ -245,12 +299,20 @@ public class OrderService {
         ordersCreatedCounter.increment();
         logger.info("SAGA: Saved order {} to database with status PENDING", orderId);
 
-        // Step 3: Write the Outbox event in the SAME transaction (replaces direct kafkaTemplate.send)
-        // ─────────────────────────────────────────────────────────────────────────────────────────
-        // WHY: if we published directly to Kafka here and Kafka was unavailable,
-        //      the order would be saved but no saga would ever start.
-        //      Writing to the outbox table guarantees the event survives a Kafka outage.
-        //      The OutboxEventRelay will pick it up and publish it asynchronously.
+        // Step 3: Capture distributed tracing context (traceId, spanId)
+        String traceId = null;
+        String spanId = null;
+        try {
+            if (tracer != null && tracer.currentSpan() != null) {
+                traceId = tracer.currentSpan().context().traceId();
+                spanId = tracer.currentSpan().context().spanId();
+                logger.info("SAGA: Captured distributed trace context: traceId={}, spanId={}", traceId, spanId);
+            }
+        } catch (Exception ex) {
+            logger.debug("SAGA: Tracing context not active: {}", ex.getMessage());
+        }
+
+        // Step 4: Write Outbox event in the SAME transaction (replaces direct kafkaTemplate.send)
         try {
             OrderPlacedEvent event = new OrderPlacedEvent(
                     orderId,
@@ -264,16 +326,31 @@ public class OrderService {
                     "order-events",
                     orderId,
                     payload,
-                    OrderPlacedEvent.class.getName()
+                    OrderPlacedEvent.class.getName(),
+                    traceId,
+                    spanId
             );
             outboxEventRepository.save(outboxEvent);
-            logger.info("SAGA: Wrote OutboxEvent for order {} — relay will publish to Kafka.", orderId);
+            logger.info("SAGA: Wrote OutboxEvent for order {} with traceId={} — relay will publish to Kafka.", orderId, traceId);
         } catch (JsonProcessingException ex) {
-            // This should never happen for a well-formed POJO — rethrow to roll back the whole txn
             throw new IllegalStateException("Failed to serialize OrderPlacedEvent for outbox: " + ex.getMessage(), ex);
         }
 
-        return new OrderResponse(orderId, "PENDING", "Order placed successfully. Processing payment...");
+        OrderResponse response = new OrderResponse(orderId, "PENDING", "Order placed successfully. Processing payment...");
+
+        // Step 5: Save Idempotency record atomically in the SAME transaction
+        if (idempotencyKey != null && !idempotencyKey.isBlank() && idempotentRequestRepository != null) {
+            try {
+                String responsePayload = objectMapper.writeValueAsString(response);
+                IdempotentRequest idempotentRecord = new IdempotentRequest(idempotencyKey.trim(), orderId, responsePayload);
+                idempotentRequestRepository.save(idempotentRecord);
+                logger.info("IDEMPOTENCY: Persisted idempotency key '{}' mapped to order ID: {}", idempotencyKey.trim(), orderId);
+            } catch (Exception ex) {
+                logger.warn("IDEMPOTENCY: Failed to persist idempotency key record for key '{}': {}", idempotencyKey, ex.getMessage());
+            }
+        }
+
+        return response;
     }
 
     /**

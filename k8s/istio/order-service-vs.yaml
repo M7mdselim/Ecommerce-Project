@@ -1,0 +1,20 @@
+apiVersion: networking.istio.io/v1beta1
+kind: VirtualService
+metadata:
+  name: order-service-vs
+  namespace: ecommerce
+spec:
+  hosts:
+    - order-service
+  gateways:
+    - mesh
+  http:
+    - route:
+        - destination:
+            host: order-service
+            subset: stable
+      timeout: 5s
+      retries:
+        attempts: 2
+        perTryTimeout: 2s
+        retryOn: 5xx,connect-failure,refused-stream

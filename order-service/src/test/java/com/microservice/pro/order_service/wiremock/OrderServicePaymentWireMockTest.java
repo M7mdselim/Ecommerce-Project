@@ -26,8 +26,12 @@ class OrderServicePaymentWireMockTest {
     @org.springframework.beans.factory.annotation.Value("${wiremock.server.port}")
     private int wireMockPort;
 
-    @Autowired
-    private RestTemplate restTemplate;
+    private final RestTemplate restTemplate = new RestTemplate();
+
+    @org.junit.jupiter.api.BeforeEach
+    void setUp() {
+        WireMock.reset();
+    }
 
     @Test
     @DisplayName("WireMock Stubbing: simulate successful Payment Service response")
@@ -49,7 +53,11 @@ class OrderServicePaymentWireMockTest {
         String wireMockUrl = "http://localhost:" + wireMockPort + "/api/v1/payments";
         String payload = "{\"orderId\":\"ORD-1001\",\"amount\":99.99}";
 
-        ResponseEntity<String> response = restTemplate.postForEntity(wireMockUrl, payload, String.class);
+        org.springframework.http.HttpHeaders headers = new org.springframework.http.HttpHeaders();
+        headers.setContentType(org.springframework.http.MediaType.APPLICATION_JSON);
+        org.springframework.http.HttpEntity<String> entity = new org.springframework.http.HttpEntity<>(payload, headers);
+
+        ResponseEntity<String> response = restTemplate.postForEntity(wireMockUrl, entity, String.class);
 
         assertThat(response.getStatusCode().value()).isEqualTo(200);
         assertThat(response.getBody()).contains("PAY-999111");
@@ -68,8 +76,12 @@ class OrderServicePaymentWireMockTest {
         String wireMockUrl = "http://localhost:" + wireMockPort + "/api/v1/payments";
         String payload = "{\"orderId\":\"ORD-1002\",\"amount\":150.00}";
 
+        org.springframework.http.HttpHeaders headers = new org.springframework.http.HttpHeaders();
+        headers.setContentType(org.springframework.http.MediaType.APPLICATION_JSON);
+        org.springframework.http.HttpEntity<String> entity = new org.springframework.http.HttpEntity<>(payload, headers);
+
         try {
-            restTemplate.postForEntity(wireMockUrl, payload, String.class);
+            restTemplate.postForEntity(wireMockUrl, entity, String.class);
         } catch (Exception e) {
             assertThat(e.getMessage()).contains("500");
         }

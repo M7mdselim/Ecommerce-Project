@@ -1,0 +1,61 @@
+global:
+  environment: development
+
+infrastructure:
+  postgres:
+    storage: 1Gi
+  kafka:
+    storage: 2Gi
+
+services:
+  apiGateway:
+    replicas: 1
+    autoscaling:
+      enabled: false
+    resources:
+      requests:
+        cpu: 100m
+        memory: 256Mi
+
+  productService:
+    replicas: 1
+    autoscaling:
+      enabled: false
+    resources:
+      requests:
+        cpu: 100m
+        memory: 256Mi
+
+  orderService:
+    replicas: 1
+    autoscaling:
+      enabled: false
+    resources:
+      requests:
+        cpu: 100m
+        memory: 256Mi
+
+  inventoryService:
+    replicas: 1
+    autoscaling:
+      enabled: false
+    resources:
+      requests:
+        cpu: 100m
+        memory: 256Mi
+
+  paymentService:
+    replicas: 1
+    autoscaling:
+      enabled: false
+    resources:
+      requests:
+        cpu: 100m
+        memory: 256Mi
+
+  notificationService:
+    replicas: 1
+    resources:
+      requests:
+        cpu: 50m
+        memory: 128Mi

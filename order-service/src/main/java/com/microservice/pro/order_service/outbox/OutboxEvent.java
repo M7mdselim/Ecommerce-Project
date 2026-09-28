@@ -88,13 +88,27 @@ public class OutboxEvent {
     @Column(nullable = false)
     private int retryCount = 0;
 
+    /** Distributed tracing Trace ID (Micrometer / Brave / W3C) captured at order creation. */
+    @Column(length = 64)
+    private String traceId;
+
+    /** Distributed tracing Span ID captured at order creation. */
+    @Column(length = 64)
+    private String spanId;
+
     protected OutboxEvent() {}
 
     public OutboxEvent(String topic, String messageKey, String payload, String eventType) {
+        this(topic, messageKey, payload, eventType, null, null);
+    }
+
+    public OutboxEvent(String topic, String messageKey, String payload, String eventType, String traceId, String spanId) {
         this.topic      = topic;
         this.messageKey = messageKey;
         this.payload    = payload;
         this.eventType  = eventType;
+        this.traceId    = traceId;
+        this.spanId     = spanId;
     }
 
     // ── Accessors ──────────────────────────────────────────────────────────────
@@ -108,6 +122,8 @@ public class OutboxEvent {
     public Instant getCreatedAt()   { return createdAt; }
     public Instant getPublishedAt() { return publishedAt; }
     public int getRetryCount()      { return retryCount; }
+    public String getTraceId()      { return traceId; }
+    public String getSpanId()       { return spanId; }
 
     /** Called by the relay when the message is successfully delivered to Kafka. */
     public void markPublished() {

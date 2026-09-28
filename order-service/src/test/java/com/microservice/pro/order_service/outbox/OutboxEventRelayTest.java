@@ -74,7 +74,7 @@ class OutboxEventRelayTest {
         CompletableFuture<SendResult<String, String>> successFuture = CompletableFuture.completedFuture(
                 mock(SendResult.class)
         );
-        given(kafkaTemplate.send(anyString(), anyString(), anyString()))
+        given(kafkaTemplate.send(any(org.apache.kafka.clients.producer.ProducerRecord.class)))
                 .willReturn(successFuture);
         given(outboxEventRepository.findPendingEvents(anyInt()))
                 .willReturn(List.of(event));
@@ -84,14 +84,13 @@ class OutboxEventRelayTest {
 
         // ── Assert ────────────────────────────────────────────────────────────
         // 1. Kafka received the event on the correct topic with the correct key
-        ArgumentCaptor<String> topicCaptor   = ArgumentCaptor.forClass(String.class);
-        ArgumentCaptor<String> keyCaptor     = ArgumentCaptor.forClass(String.class);
-        ArgumentCaptor<String> payloadCaptor = ArgumentCaptor.forClass(String.class);
-        verify(kafkaTemplate).send(topicCaptor.capture(), keyCaptor.capture(), payloadCaptor.capture());
+        ArgumentCaptor<org.apache.kafka.clients.producer.ProducerRecord<String, String>> recordCaptor =
+                ArgumentCaptor.forClass(org.apache.kafka.clients.producer.ProducerRecord.class);
+        verify(kafkaTemplate).send(recordCaptor.capture());
 
-        assertThat(topicCaptor.getValue()).isEqualTo("order-events");
-        assertThat(keyCaptor.getValue()).isEqualTo("order-123");
-        assertThat(payloadCaptor.getValue()).contains("PROD-001");
+        assertThat(recordCaptor.getValue().topic()).isEqualTo("order-events");
+        assertThat(recordCaptor.getValue().key()).isEqualTo("order-123");
+        assertThat(recordCaptor.getValue().value()).contains("PROD-001");
 
         // 2. The event row is saved with PUBLISHED status (not still PENDING)
         ArgumentCaptor<OutboxEvent> savedCaptor = ArgumentCaptor.forClass(OutboxEvent.class);
@@ -131,7 +130,7 @@ class OutboxEventRelayTest {
         // Kafka throws a runtime exception (broker unreachable)
         CompletableFuture<SendResult<String, String>> failedFuture = new CompletableFuture<>();
         failedFuture.completeExceptionally(new RuntimeException("Kafka broker not available"));
-        given(kafkaTemplate.send(anyString(), anyString(), anyString()))
+        given(kafkaTemplate.send(any(org.apache.kafka.clients.producer.ProducerRecord.class)))
                 .willReturn(failedFuture);
         given(outboxEventRepository.findPendingEvents(anyInt()))
                 .willReturn(List.of(event));
@@ -157,6 +156,54 @@ class OutboxEventRelayTest {
         assertThat(event.getPublishedAt())
                 .as("publishedAt must be null when publish failed")
                 .isNull();
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // Test 3 — Distributed Tracing Context Propagation across Outbox to Kafka
+    // ─────────────────────────────────────────────────────────────────────────
+
+    @Test
+    @DisplayName("relay: propagates traceId and spanId as B3 and W3C traceparent headers to Kafka")
+    @SuppressWarnings("unchecked")
+    void relay_whenTraceContextPresent_injectsTracingHeadersIntoKafkaRecord() {
+        // ── Arrange ──────────────────────────────────────────────────────────
+        OutboxEvent event = new OutboxEvent(
+                "order-events",
+                "order-789",
+                "{\"orderId\":\"order-789\"}",
+                "com.microservice.pro.order_service.event.OrderPlacedEvent",
+                "4bf92f3577b34da6a3ce929d0e0e4736",
+                "00f067aa0ba902b7"
+        );
+
+        CompletableFuture<SendResult<String, String>> successFuture = CompletableFuture.completedFuture(
+                mock(SendResult.class)
+        );
+        given(kafkaTemplate.send(any(org.apache.kafka.clients.producer.ProducerRecord.class)))
+                .willReturn(successFuture);
+        given(outboxEventRepository.findPendingEvents(anyInt()))
+                .willReturn(List.of(event));
+
+        // ── Act ───────────────────────────────────────────────────────────────
+        relay.relay();
+
+        // ── Assert ────────────────────────────────────────────────────────────
+        ArgumentCaptor<org.apache.kafka.clients.producer.ProducerRecord<String, String>> recordCaptor =
+                ArgumentCaptor.forClass(org.apache.kafka.clients.producer.ProducerRecord.class);
+        verify(kafkaTemplate).send(recordCaptor.capture());
+        org.apache.kafka.clients.producer.ProducerRecord<String, String> record = recordCaptor.getValue();
+
+        assertThat(record.headers().lastHeader("X-B3-TraceId")).isNotNull();
+        assertThat(new String(record.headers().lastHeader("X-B3-TraceId").value()))
+                .isEqualTo("4bf92f3577b34da6a3ce929d0e0e4736");
+
+        assertThat(record.headers().lastHeader("X-B3-SpanId")).isNotNull();
+        assertThat(new String(record.headers().lastHeader("X-B3-SpanId").value()))
+                .isEqualTo("00f067aa0ba902b7");
+
+        assertThat(record.headers().lastHeader("traceparent")).isNotNull();
+        assertThat(new String(record.headers().lastHeader("traceparent").value()))
+                .isEqualTo("00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-01");
     }
 
     // ─────────────────────────────────────────────────────────────────────────

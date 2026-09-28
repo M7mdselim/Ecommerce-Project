@@ -101,7 +101,7 @@ services:
 
   discovery-server:
     build:
-      context: ./eureka
+      context: ./discovery-server
       dockerfile: Dockerfile
     container_name: discovery-server
     ports:
@@ -154,7 +154,7 @@ services:
   # =========================================================================
   product-service:
     build:
-      context: ./product
+      context: ./product-service
       dockerfile: Dockerfile
     container_name: product-service
     ports:
@@ -306,7 +306,7 @@ services:
     ports:
       - "9090:9090"
     volumes:
-      - ./prometheus/prometheus.yml:/etc/prometheus/prometheus.yml
+      - ./observability/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml
       - prometheus_data:/prometheus
     networks:
       - ecommerce-net
@@ -326,7 +326,7 @@ services:
       - GF_SECURITY_ADMIN_USER=admin
       - GF_SECURITY_ADMIN_PASSWORD=admin
     volumes:
-      - ./grafana/provisioning:/etc/grafana/provisioning
+      - ./observability/grafana/provisioning:/etc/grafana/provisioning
       - grafana_data:/var/lib/grafana
     networks:
       - ecommerce-net

@@ -59,7 +59,7 @@ public class OrderServiceIntegrationTest {
 
         OrderRequest request = new OrderRequest("prod123", 2, new BigDecimal("100.00"));
 
-        MvcResult mvcResult = mockMvc.perform(MockMvcRequestBuilders.post("/api/orders")
+        MvcResult mvcResult = mockMvc.perform(MockMvcRequestBuilders.post("/api/orders/async")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(request)))
                 .andExpect(request().asyncStarted())
@@ -81,7 +81,7 @@ public class OrderServiceIntegrationTest {
 
         OrderRequest request = new OrderRequest("prod123", 2, new BigDecimal("100.00"));
 
-        MvcResult mvcResult = mockMvc.perform(MockMvcRequestBuilders.post("/api/orders")
+        MvcResult mvcResult = mockMvc.perform(MockMvcRequestBuilders.post("/api/orders/async")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(request)))
                 .andExpect(request().asyncStarted())
@@ -108,7 +108,7 @@ public class OrderServiceIntegrationTest {
         OrderRequest request = new OrderRequest("prod123", 2, new BigDecimal("100.00"));
         long startTime = System.currentTimeMillis();
 
-        MvcResult mvcResult = mockMvc.perform(MockMvcRequestBuilders.post("/api/orders")
+        MvcResult mvcResult = mockMvc.perform(MockMvcRequestBuilders.post("/api/orders/async")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(request)))
                 .andExpect(request().asyncStarted())
@@ -142,7 +142,7 @@ public class OrderServiceIntegrationTest {
         List<Callable<MvcResult>> tasks = new ArrayList<>();
 
         for (int i = 0; i < totalRequests; i++) {
-            tasks.add(() -> mockMvc.perform(MockMvcRequestBuilders.post("/api/orders")
+            tasks.add(() -> mockMvc.perform(MockMvcRequestBuilders.post("/api/orders/async")
                             .contentType(MediaType.APPLICATION_JSON)
                             .content(requestJson))
                     .andExpect(request().asyncStarted())

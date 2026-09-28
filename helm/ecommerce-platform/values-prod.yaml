@@ -1,0 +1,54 @@
+global:
+  environment: production
+
+infrastructure:
+  postgres:
+    storage: 20Gi
+  kafka:
+    storage: 50Gi
+
+services:
+  apiGateway:
+    replicas: 3
+    autoscaling:
+      enabled: true
+      minReplicas: 3
+      maxReplicas: 15
+      targetCPUUtilizationPercentage: 65
+
+  productService:
+    replicas: 3
+    autoscaling:
+      enabled: true
+      minReplicas: 3
+      maxReplicas: 15
+      targetCPUUtilizationPercentage: 65
+
+  orderService:
+    replicas: 3
+    autoscaling:
+      enabled: true
+      minReplicas: 3
+      maxReplicas: 15
+      targetCPUUtilizationPercentage: 65
+
+  inventoryService:
+    replicas: 3
+    autoscaling:
+      enabled: true
+      minReplicas: 3
+      maxReplicas: 10
+      targetCPUUtilizationPercentage: 65
+
+  paymentService:
+    replicas: 3
+    autoscaling:
+      enabled: true
+      minReplicas: 3
+      maxReplicas: 10
+      targetCPUUtilizationPercentage: 65
+
+  notificationService:
+    replicas: 2
+    autoscaling:
+      enabled: false

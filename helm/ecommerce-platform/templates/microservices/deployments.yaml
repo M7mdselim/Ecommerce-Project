@@ -1,0 +1,94 @@
+{{- range $serviceKey, $service := .Values.services }}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ $service.name }}
+  namespace: {{ $.Values.global.namespace }}
+  labels:
+    app: {{ $service.name }}
+    track: stable
+    version: stable
+    {{- include "ecommerce-platform.labels" $ | nindent 4 }}
+spec:
+  replicas: {{ $service.replicas }}
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 25%
+      maxUnavailable: 0
+  selector:
+    matchLabels:
+      app: {{ $service.name }}
+      track: stable
+  template:
+    metadata:
+      labels:
+        app: {{ $service.name }}
+        track: stable
+        version: stable
+      annotations:
+        sidecar.istio.io/inject: "true"
+    spec:
+      containers:
+        - name: {{ $service.name }}
+          image: "{{ $.Values.global.imageRegistry }}/{{ $service.image }}"
+          imagePullPolicy: {{ $.Values.global.imagePullPolicy }}
+          ports:
+            - containerPort: {{ $service.port }}
+              name: http
+          env:
+            - name: SPRING_PROFILES_ACTIVE
+              value: "kubernetes"
+            - name: EUREKA_CLIENT_SERVICEURL_DEFAULTZONE
+              valueFrom:
+                configMapKeyRef:
+                  name: {{ include "ecommerce-platform.fullname" $ }}-config
+                  key: eureka.url
+            - name: SPRING_KAFKA_BOOTSTRAP_SERVERS
+              valueFrom:
+                configMapKeyRef:
+                  name: {{ include "ecommerce-platform.fullname" $ }}-config
+                  key: kafka.bootstrap-servers
+            - name: SPRING_DATASOURCE_URL
+              valueFrom:
+                configMapKeyRef:
+                  name: {{ include "ecommerce-platform.fullname" $ }}-config
+                  key: datasource.url
+            - name: SPRING_DATA_REDIS_HOST
+              valueFrom:
+                configMapKeyRef:
+                  name: {{ include "ecommerce-platform.fullname" $ }}-config
+                  key: redis.host
+            - name: SPRING_DATA_REDIS_PORT
+              valueFrom:
+                configMapKeyRef:
+                  name: {{ include "ecommerce-platform.fullname" $ }}-config
+                  key: redis.port
+            - name: JWT_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "ecommerce-platform.fullname" $ }}-secrets
+                  key: jwt-secret
+            - name: SPRING_DATASOURCE_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "ecommerce-platform.fullname" $ }}-secrets
+                  key: db-password
+          resources:
+            {{- toYaml $service.resources | nindent 12 }}
+          readinessProbe:
+            httpGet:
+              path: /actuator/health/readiness
+              port: {{ $service.port }}
+            initialDelaySeconds: 25
+            periodSeconds: 10
+            failureThreshold: 3
+          livenessProbe:
+            httpGet:
+              path: /actuator/health/liveness
+              port: {{ $service.port }}
+            initialDelaySeconds: 30
+            periodSeconds: 15
+            failureThreshold: 3
+---
+{{- end }}

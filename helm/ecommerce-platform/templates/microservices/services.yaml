@@ -1,0 +1,20 @@
+{{- range $serviceKey, $service := .Values.services }}
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ $service.name }}
+  namespace: {{ $.Values.global.namespace }}
+  labels:
+    app: {{ $service.name }}
+    {{- include "ecommerce-platform.labels" $ | nindent 4 }}
+spec:
+  type: ClusterIP
+  selector:
+    app: {{ $service.name }}
+  ports:
+    - port: {{ $service.port }}
+      targetPort: {{ $service.port }}
+      protocol: TCP
+      name: http
+---
+{{- end }}

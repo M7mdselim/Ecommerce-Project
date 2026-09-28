@@ -1,0 +1,35 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+namespace: ecommerce
+
+resources:
+  - platform-config.yaml
+  - platform-secrets.yaml
+  - infrastructure/postgres.yaml
+  - infrastructure/redis.yaml
+  - infrastructure/kafka-kraft.yaml
+  - product-service/deployment.yaml
+  - product-service/service.yaml
+  - product-service/hpa.yaml
+  - order-service/deployment.yaml
+  - order-service/service.yaml
+  - order-service/hpa.yaml
+  - inventory-service/deployment.yaml
+  - inventory-service/service.yaml
+  - inventory-service/hpa.yaml
+  - payment-service/deployment.yaml
+  - payment-service/service.yaml
+  - payment-service/hpa.yaml
+  - notification-service/deployment.yaml
+  - notification-service/service.yaml
+  - api-gateway/deployment.yaml
+  - api-gateway/service.yaml
+  - api-gateway/hpa.yaml
+  - istio/namespace.yaml
+  - istio/peer-authentication.yaml
+  - istio/gateway.yaml
+  - istio/api-gateway-vs.yaml
+  - istio/order-service-dr.yaml
+  - istio/order-service-vs.yaml
+  - istio/product-service-dr.yaml
+  - istio/product-service-vs.yaml

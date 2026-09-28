@@ -1,3 +1,4 @@
 com\microservice\pro\inventory_service\contract\InventoryServicePactVerificationTest.class
+com\microservice\pro\inventory_service\contract\InventoryServicePactVerificationTest$TestSecurityConfig.class
 com\microservice\pro\inventory_service\InventoryServiceTest.class
 com\microservice\pro\inventory_service\InventoryControllerIntegrationTest.class
